@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>用户管理 · 云小圈AI硬件质检系统</title>
+<link rel="icon" href="/favicon.png">
+<link rel="stylesheet" href="/app.css">
+<style>
+.wrap{max-width:1080px;margin:0 auto;padding:26px 26px 60px}
+.pagehead{margin:6px 2px 20px}
+.pagehead h1{font-size:30px;font-weight:900;letter-spacing:-.5px;margin:0 0 6px}
+.pagehead p{color:var(--dim);font-size:14px;margin:0}
+.board{background:rgba(255,255,255,.78);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.9);
+  border-radius:var(--radius);box-shadow:var(--e2);margin-bottom:20px;overflow:hidden;animation:rise .4s ease both}
+.board .head{padding:16px 20px;border-bottom:1px solid var(--line);font-weight:800;color:var(--ink);
+  display:flex;align-items:center;gap:10px;position:relative}
+.board .head::after{content:"";position:absolute;left:20px;bottom:-1px;width:52px;height:2.5px;border-radius:2px;background:var(--grad-blue)}
+.board .head .count{margin-left:auto;background:var(--gray-bg);color:var(--dim);border-radius:20px;padding:2px 12px;font-size:12px;font-weight:600}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:12px 16px;text-align:left;border-bottom:1px solid var(--line)}
+th{color:var(--dim);font-weight:600;font-size:12px}
+.tag{display:inline-block;padding:2px 11px;border-radius:20px;font-size:12px;font-weight:600}
+.tag.admin{background:var(--amber-bg);color:var(--amber-d)}
+.tag.operator{background:var(--blue-bg);color:var(--blue-d)}
+.tag.pending{background:var(--amber-bg);color:var(--amber-d)}
+.tag.approved{background:var(--green-bg);color:var(--green)}
+.tag.rejected{background:var(--red-bg);color:var(--red)}
+.empty{padding:28px;text-align:center;color:var(--faint)}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <img class="logo" src="/logo.png" alt="云小圈">
+  <div class="brand"><div class="sysname">云小圈AI硬件质检系统</div><div class="title">用户管理</div></div>
+  <span class="sp"></span>
+  <span class="user" id="user">—</span>
+  <div class="menu" id="menu">
+    <button class="menu-btn" id="menu-btn">我的菜单 ▾</button>
+    <div class="menu-panel">
+      <a href="/">🏠 功能首页</a>
+      <a href="/workbench">质检工作台</a>
+      <a href="/manage">质检管理看板</a>
+      <a href="/users">用户管理</a>
+      <a href="/settings">系统设置</a>
+    </div>
+  </div>
+  <button class="logout" id="logout">退出登录</button>
+</div>
+
+<div class="wrap">
+  <div class="pagehead">
+    <h1>用户管理</h1>
+    <p>审核新注册账号、管理用户角色与状态，控制谁能登录使用系统。</p>
+  </div>
+  <div class="board">
+    <div class="head">⏳ 待审核 <span class="count" id="pend-count">0</span></div>
+    <div id="pend-body"><div class="empty">加载中…</div></div>
+  </div>
+  <div class="board">
+    <div class="head">👥 全部用户 <span class="count" id="all-count">0</span></div>
+    <div id="all-body"><div class="empty">加载中…</div></div>
+  </div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+function esc(s){return (s==null?'':String(s)).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+function roleTag(r){return `<span class="tag ${r==='admin'?'admin':'operator'}">${r==='admin'?'管理员':'质检员'}</span>`}
+function statusTag(s){const m={pending:'待审核',approved:'已通过',rejected:'已拒绝'};return `<span class="tag ${s}">${m[s]||s}</span>`}
+
+$('menu-btn').onclick=e=>{e.stopPropagation();$('menu').classList.toggle('open')};
+document.addEventListener('click',()=>$('menu').classList.remove('open'));
+$('logout').onclick=async()=>{await fetch('/api/logout',{method:'POST'});location.href='/login';};
+
+async function whoami(){
+  try{const d=await(await fetch('/api/me')).json();
+    if(d.authenticated)$('user').textContent=d.username+'（'+(d.role==='admin'?'管理员':'质检员')+'）';}catch(e){}
+}
+
+async function review(id,action){
+  const fd=new FormData();fd.append('action',action);
+  try{const d=await(await fetch('/api/users/'+id+'/review',{method:'POST',body:fd})).json();
+    if(!d.ok)alert('操作失败：'+(d.error||''));load();}catch(e){alert(e.message)}
+}
+async function resetPw(id,name){
+  const p=prompt('给用户「'+name+'」设置新密码：');
+  if(!p)return;
+  const fd=new FormData();fd.append('password',p);
+  try{const d=await(await fetch('/api/users/'+id+'/reset_pw',{method:'POST',body:fd})).json();
+    alert(d.ok?'已重置':'失败');}catch(e){alert(e.message)}
+}
+
+function rowsHtml(list,withReview){
+  if(!list.length)return '<div class="empty">无</div>';
+  let h='<table><tr><th>用户名</th><th>手机号</th><th>角色</th><th>状态</th><th>注册时间</th><th>操作</th></tr>';
+  for(const u of list){
+    let acts='';
+    if(u.status==='pending'){
+      acts=`<button class="btn-xs" onclick="review(${u.id},'approve')">通过</button>
+            <button class="btn-xs" onclick="review(${u.id},'reject')">拒绝</button>`;
+    }else{
+      if(u.status==='approved')acts+=`<button class="btn-xs" onclick="review(${u.id},'reject')">停用</button> `;
+      if(u.status==='rejected')acts+=`<button class="btn-xs" onclick="review(${u.id},'approve')">恢复</button> `;
+      acts+=`<button class="btn-xs" onclick="resetPw(${u.id},'${esc(u.username)}')">重置密码</button>`;
+    }
+    h+=`<tr><td><b>${esc(u.username)}</b></td><td>${esc(u.phone)||'—'}</td><td>${roleTag(u.role)}</td><td>${statusTag(u.status)}</td>
+        <td>${esc(u.created_at||'')}</td><td>${acts}</td></tr>`;
+  }
+  return h+'</table>';
+}
+
+async function load(){
+  try{
+    const all=(await(await fetch('/api/users')).json()).users||[];
+    const pend=all.filter(u=>u.status==='pending');
+    $('pend-count').textContent=pend.length;
+    $('all-count').textContent=all.length;
+    $('pend-body').innerHTML=rowsHtml(pend,true);
+    $('all-body').innerHTML=rowsHtml(all,false);
+  }catch(e){$('pend-body').innerHTML='<div class="empty">加载失败：'+esc(e.message)+'</div>';}
+}
+whoami();load();
+setInterval(load,15000);
+</script>
+</body>
+</html>

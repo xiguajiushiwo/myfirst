@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 · 云小圈AI硬件质检系统</title>
+<link rel="icon" href="/favicon.png">
+<style>
+:root{
+  --ink:#1d2330; --dim:#6b7280; --faint:#9aa4b2;
+  --orange:#fc8615; --blue:#0a5cd5; --line:rgba(20,40,80,.10);
+  --radius:14px;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;color:var(--ink);min-height:100vh;
+  font:15px/1.6 -apple-system,BlinkMacSystemFont,"SF Pro SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;position:relative;overflow-x:hidden;
+  /* 浅色渐变背景：蓝紫为主，橙色点缀，呼应 logo */
+  background:
+    radial-gradient(1100px 700px at 12% 8%, rgba(252,134,21,.16), transparent 55%),
+    radial-gradient(1200px 800px at 92% 90%, rgba(10,92,213,.18), transparent 58%),
+    linear-gradient(135deg,#eef1fb 0%,#e8eefc 40%,#f3ecfb 100%);
+}
+
+/* 顶栏：左上角 logo + 名称 */
+.top{position:relative;z-index:2;display:flex;align-items:center;gap:12px;padding:22px 40px}
+.top img{height:56px;width:auto;object-fit:contain;display:block;
+  image-rendering:-webkit-optimize-contrast}
+.top .name{font-size:19px;font-weight:800;letter-spacing:.5px;color:var(--ink)}
+.top .sp{flex:1}
+.top .site{font-size:13px;color:var(--blue);font-weight:600;text-decoration:none;margin-right:18px;transition:opacity .15s}
+.top .site:hover{opacity:.7}
+.top .lang{font-size:13px;color:var(--dim)}
+
+/* 主体两栏：居中排列，左右留白对称；中间拉开间距 */
+.main{position:relative;z-index:2;display:flex;align-items:center;justify-content:center;
+  gap:120px;max-width:1240px;margin:0 auto;padding:20px 40px 40px;min-height:calc(100vh - 160px)}
+
+/* 左侧品牌区 */
+.hero{flex:0 1 560px;max-width:560px}
+.hero .eyebrow{display:inline-block;font-size:13px;font-weight:600;letter-spacing:1px;
+  color:var(--blue);background:rgba(10,92,213,.08);border:1px solid rgba(10,92,213,.15);
+  padding:6px 14px;border-radius:999px;margin-bottom:20px}
+.hero h1{font-size:54px;line-height:1.1;font-weight:900;margin:0 0 16px;letter-spacing:-1px;
+  display:flex;align-items:center;gap:14px}
+.hero h1 .accent{color:var(--blue)}
+.hero h1 .spark{width:30px;height:30px;flex-shrink:0;color:var(--blue);align-self:flex-start;margin-top:4px}
+.hero h1 .spark svg{width:100%;height:100%;fill:currentColor}
+.hero .lead{font-size:16.5px;color:var(--dim);margin:0 0 40px;max-width:520px;line-height:1.8}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.fcard{display:flex;align-items:flex-start;gap:14px;
+  background:rgba(255,255,255,.62);border:1px solid rgba(255,255,255,.85);
+  border-radius:16px;padding:20px 22px;backdrop-filter:blur(10px);
+  box-shadow:0 10px 30px rgba(30,60,120,.08);transition:transform .2s,box-shadow .2s}
+.fcard:hover{transform:translateY(-3px);box-shadow:0 16px 40px rgba(30,60,120,.14)}
+.fcard .ic{width:38px;height:38px;flex-shrink:0;border-radius:11px;display:grid;place-items:center;
+  background:rgba(10,92,213,.08);color:var(--blue)}
+.fcard .ic svg{width:21px;height:21px;stroke:currentColor;stroke-width:1.7;fill:none;
+  stroke-linecap:round;stroke-linejoin:round}
+.fcard .tx{min-width:0}
+.fcard h3{font-size:15px;font-weight:700;margin:0 0 5px}
+.fcard p{font-size:12.5px;color:var(--dim);margin:0;line-height:1.65}
+
+/* 右侧登录卡：固定高度，切换 登录/注册 两个 tab 大小不变 */
+.card{width:480px;flex-shrink:0;background:#fff;border-radius:22px;
+  padding:48px 44px 40px;box-shadow:0 30px 70px rgba(30,60,120,.18)}
+.card .welcome{font-size:27px;font-weight:800;margin:0 0 6px}
+.card .subline{font-size:14px;color:var(--dim);margin:0 0 30px}
+
+.tabs{display:flex;gap:30px;border-bottom:1px solid var(--line);margin-bottom:28px}
+.tabs button{border:none;background:none;font:inherit;font-size:16px;font-weight:600;
+  color:var(--dim);padding:0 0 14px;cursor:pointer;position:relative;transition:color .2s}
+.tabs button.on{color:var(--blue)}
+.tabs button.on::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2.5px;border-radius:2px;
+  background:var(--blue)}
+
+.inp{position:relative;margin-bottom:16px}
+.inp input{width:100%;height:52px;padding:0 16px;font:inherit;font-size:15px;line-height:52px;color:var(--ink);
+  border:1px solid var(--line);border-radius:var(--radius);
+  background:#f7f9fc;transition:border-color .2s,box-shadow .2s,background .2s}
+.inp input::placeholder{color:var(--faint)}
+/* 有内容(手动输入)→ 浅蓝底；空 → 浅灰底 */
+.inp input:not(:placeholder-shown){background:#eaf1fd}
+.inp input:focus{outline:none;border-color:var(--blue);
+  box-shadow:0 0 0 4px rgba(10,92,213,.14);background:#fff}
+/* 自动填充/已填内容显示浅蓝底(#eaf1fd)，空框保持浅灰(#f7f9fc) */
+.inp input:-webkit-autofill,
+.inp input:-webkit-autofill:hover,
+.inp input:-webkit-autofill:active{
+  -webkit-text-fill-color:var(--ink);
+  -webkit-box-shadow:0 0 0 1000px #eaf1fd inset;
+  box-shadow:0 0 0 1000px #eaf1fd inset;
+  caret-color:var(--ink);
+  transition:background-color 9999s ease-in-out 0s}
+.inp input:-webkit-autofill:focus{
+  -webkit-box-shadow:0 0 0 1000px #eaf1fd inset,0 0 0 4px rgba(10,92,213,.14);
+  box-shadow:0 0 0 1000px #eaf1fd inset,0 0 0 4px rgba(10,92,213,.14)}
+
+/* 记住我 / 忘记密码 一行 */
+.row{display:flex;align-items:center;justify-content:space-between;margin:4px 2px 4px}
+.row .rm{display:flex;align-items:center;gap:7px;font-size:13.5px;color:var(--dim);cursor:pointer;user-select:none}
+.row .rm input{width:15px;height:15px;accent-color:var(--blue);cursor:pointer;margin:0}
+.row .forgot{font-size:13.5px;color:var(--blue);cursor:pointer;font-weight:600}
+
+.go{width:100%;margin-top:12px;padding:15px;border:none;border-radius:var(--radius);cursor:pointer;
+  color:#fff;font:inherit;font-size:16px;font-weight:700;letter-spacing:1px;
+  background:var(--blue);
+  box-shadow:0 12px 26px rgba(10,92,213,.26);
+  transition:transform .15s,box-shadow .2s,background .2s}
+.go:hover{background:#0950bb;box-shadow:0 16px 36px rgba(10,92,213,.36)}
+.go:active{transform:translateY(1px) scale(.995)}
+
+.tip{text-align:center;font-size:12.5px;color:var(--faint);margin-top:16px;line-height:1.6}
+.tip a{color:var(--blue);cursor:pointer;font-weight:600}
+.msg{margin-top:14px;padding:11px 14px;border-radius:11px;font-size:13.5px;display:none;text-align:center}
+.msg.err{display:block;background:#fdecec;color:#d70015;border:1px solid rgba(215,0,21,.18)}
+.msg.ok{display:block;background:#e8f7ee;color:#1a9c4e;border:1px solid rgba(26,156,78,.22)}
+.hidden{display:none}
+
+.foot{position:relative;z-index:2;text-align:center;padding:18px;font-size:12px;color:var(--faint)}
+
+@media(max-width:980px){
+  .hero{display:none}
+  .main{justify-content:center;padding-top:0}
+  .card{width:100%;max-width:420px}
+}
+</style>
+</head>
+<body>
+<div class="top">
+  <img src="/logo_hd.png" onerror="this.src='/logo.png'" alt="云小圈 CLOUD ECOSYSTEM">
+  <span class="name">云小圈 · AI 硬件质检系统</span>
+  <span class="sp"></span>
+  <a class="site" href="https://www.yunxiaoquan.cn/" target="_blank" rel="noopener">公司官网 ↗</a>
+  <span class="lang">⊕ 简体中文</span>
+</div>
+
+<div class="main">
+  <!-- 左侧品牌区 -->
+  <div class="hero">
+    <h1><span class="accent">严质检</span><span class="spark"><svg viewBox="0 0 24 24"><path d="M12 1.5c.5 4.2 1.6 6.4 3.4 8.1 1.7 1.8 4 2.9 8.1 3.4-4.1.5-6.4 1.6-8.1 3.4-1.8 1.7-2.9 4-3.4 8.1-.5-4.1-1.6-6.4-3.4-8.1-1.7-1.8-4-2.9-8.1-3.4 4.1-.5 6.4-1.6 8.1-3.4C10.4 7.9 11.5 5.7 12 1.5Z"/><path d="M20 2.5c.2 1.5.6 2.3 1.2 2.9.6.6 1.4 1 2.9 1.2-1.5.2-2.3.6-2.9 1.2-.6.6-1 1.4-1.2 2.9-.2-1.5-.6-2.3-1.2-2.9-.6-.6-1.4-1-2.9-1.2 1.5-.2 2.3-.6 2.9-1.2.6-.6 1-1.4 1.2-2.9Z"/></svg></span></h1>
+    <p class="lead">双相机 × 多模态大模型 · 内存条智能质检平台<br>逐颗核验外观与日期，一次拍全整盘，绝不漏检。</p>
+    <div class="cards">
+      <div class="fcard">
+        <div class="ic"><svg viewBox="0 0 24 24"><path d="M3 8a2 2 0 0 1 2-2h2l1.4-2h7.2L17 6h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><circle cx="12" cy="12.5" r="3.2"/></svg></div>
+        <div class="tx"><h3>双相机同步采集</h3>
+        <p>海康 GigE 双相机正反面同拍，抗丢包稳定成像，一次拍全整盘。</p></div>
+      </div>
+      <div class="fcard">
+        <div class="ic"><svg viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 1 3 3 3 3 0 0 1 1 5.8 3 3 0 0 1-1 5.7 3 3 0 0 1-6 0 3 3 0 0 1-1-5.7A3 3 0 0 1 9 6a3 3 0 0 1 3-3Z"/><path d="M12 6v12"/></svg></div>
+        <div class="tx"><h3>AI 识别日期码</h3>
+        <p>OCR + 多模态大模型识别日期码，二维码精确解析 SN，识别更准。</p></div>
+      </div>
+      <div class="fcard">
+        <div class="ic"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M8.5 12.2l2.4 2.4 4.6-5"/></svg></div>
+        <div class="tx"><h3>外观＋日期 逐颗判定</h3>
+        <p>逐颗核验外观与日期，全合格才放行，一颗不过绝不被掩盖。</p></div>
+      </div>
+      <div class="fcard">
+        <div class="ic"><svg viewBox="0 0 24 24"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 16v-4"/><path d="M12 16V8"/><path d="M16 16v-6"/></svg></div>
+        <div class="tx"><h3>看板与导出</h3>
+        <p>良品率看板、按客户/批次统计，全字段一键导出，数据可追溯。</p></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 右侧登录卡 -->
+  <div class="card">
+    <div class="welcome" id="welcome">欢迎登录质检系统</div>
+    <div class="subline" id="subline">请使用管理员分配的账号登录</div>
+
+    <div class="tabs" id="tabs">
+      <button class="on" id="tab-login" onclick="go('login')">账号登录</button>
+      <button id="tab-reg" onclick="go('reg')">申请注册</button>
+    </div>
+
+    <!-- 登录 -->
+    <div id="view-login">
+      <div class="inp"><input id="l-user" placeholder="请输入用户名" autocomplete="username" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <div class="inp"><input id="l-pw" type="password" placeholder="请输入登录密码" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <div class="row">
+        <label class="rm"><input type="checkbox" id="l-remember" checked> 记住我</label>
+        <a class="forgot" onclick="forgotPw()">忘记密码？</a>
+      </div>
+      <button class="go" onclick="doLogin()" style="margin-top:48px">登 录</button>
+      <div class="msg" id="l-msg"></div>
+      <div class="tip" style="margin-top:44px">还没有账号？<a onclick="go('reg')">现在就注册 ›</a></div>
+    </div>
+
+    <!-- 注册 -->
+    <div id="view-reg" class="hidden">
+      <div class="inp"><input id="r-user" placeholder="用户名（请填写姓名）"></div>
+      <div class="inp"><input id="r-phone" placeholder="手机号"></div>
+      <div class="inp"><input id="r-pw" type="password" placeholder="登录密码（至少 6 位）"></div>
+      <div class="inp"><input id="r-pw2" type="password" placeholder="确认密码" onkeydown="if(event.key==='Enter')doRegister()"></div>
+      <button class="go" onclick="doRegister()">提交注册</button>
+      <div class="msg" id="r-msg"></div>
+      <div class="tip">注册后需管理员审核通过方可登录 · <a onclick="go('login')">返回登录</a></div>
+    </div>
+  </div>
+</div>
+
+<div class="foot">© 云小圈 · AI 硬件质检系统 · <a href="https://www.yunxiaoquan.cn/" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none">www.yunxiaoquan.cn</a></div>
+
+<script>
+const $=id=>document.getElementById(id);
+function show(el,type,text){el.className='msg '+type;el.textContent=text;}
+function go(v){
+  const login=v==='login';
+  $('view-login').classList.toggle('hidden',!login);
+  $('view-reg').classList.toggle('hidden',login);
+  $('tab-login').classList.toggle('on',login);
+  $('tab-reg').classList.toggle('on',!login);
+  $('welcome').textContent=login?'欢迎登录质检系统':'创建你的质检账号';
+  $('subline').textContent=login?'请使用管理员分配的账号登录':'注册后需管理员审核通过方可登录';
+}
+
+function forgotPw(){
+  show($('l-msg'),'ok','请联系系统管理员，在「用户管理」中为你重置密码。');
+}
+
+async function doLogin(){
+  const u=$('l-user').value.trim(), p=$('l-pw').value, box=$('l-msg');
+  if(!u||!p){show(box,'err','请输入用户名和密码');return;}
+  try{
+    const fd=new FormData();fd.append('username',u);fd.append('password',p);
+    const d=await(await fetch('/api/login',{method:'POST',body:fd})).json();
+    if(d.ok){show(box,'ok','登录成功，正在进入…');location.href='/';}
+    else show(box,'err',d.error||'登录失败');
+  }catch(e){show(box,'err','网络错误：'+e.message);}
+}
+async function doRegister(){
+  const u=$('r-user').value.trim(), ph=$('r-phone').value.trim(),
+        p=$('r-pw').value, p2=$('r-pw2').value, box=$('r-msg');
+  if(!u||!p){show(box,'err','请填写用户名(姓名)和密码');return;}
+  if(p.length<6){show(box,'err','密码至少 6 位');return;}
+  if(p!==p2){show(box,'err','两次密码不一致');return;}
+  try{
+    const fd=new FormData();fd.append('username',u);fd.append('password',p);fd.append('phone',ph);
+    const d=await(await fetch('/api/register',{method:'POST',body:fd})).json();
+    if(d.ok){show(box,'ok',d.message||'注册成功，等待管理员审核');
+      $('r-user').value='';$('r-phone').value='';$('r-pw').value='';$('r-pw2').value='';}
+    else show(box,'err',d.error||'注册失败');
+  }catch(e){show(box,'err','网络错误：'+e.message);}
+}
+</script>
+</body>
+</html>

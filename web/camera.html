@@ -1,0 +1,1369 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>实时质检监控 · 云小圈AI硬件质检系统</title>
+<link rel="icon" type="image/png" href="/favicon.png" />
+<style>
+  :root{
+    --ink:#17202f;
+    --muted:#6b7280;
+    --faint:#9aa4b2;
+    --soft:#eef3f8;
+    --panel:#ffffff;
+    --line:rgba(20,40,80,.10);
+    --line-strong:rgba(20,40,80,.18);
+    --blue:#0a5cd5;
+    --blue-deep:#083f93;
+    --orange:#fc8615;
+    --green:#0f9d58;
+    --green-bg:#e8f7ef;
+    --red:#d93025;
+    --red-bg:#fff0ee;
+    --amber:#c96a06;
+    --amber-bg:#fff5df;
+    --steel:#273449;
+    --shadow:0 12px 34px rgba(30,60,120,.09);
+    --shadow-strong:0 22px 50px rgba(30,60,120,.16);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;
+    color:var(--ink);
+    font:14px/1.55 "Microsoft YaHei","PingFang SC",system-ui,-apple-system,sans-serif;
+    background:
+      radial-gradient(1100px 700px at 12% 8%, rgba(252,134,21,.16), transparent 55%),
+      radial-gradient(1200px 800px at 92% 90%, rgba(10,92,213,.18), transparent 58%),
+      linear-gradient(135deg,#eef1fb 0%,#e8eefc 40%,#f3ecfb 100%);
+    background-attachment:fixed;
+    min-height:100vh;
+    overflow:hidden;
+  }
+  /* 标注图区块在首屏之下。整页 overflow:hidden 时它出现了也滚不到，
+     所以有标注图时放开纵向滚动。 */
+  body:has(.annotated-section.has-annotated){overflow-y:auto}
+  button,input,select{font:inherit}
+  .topbar{
+    position:sticky;top:0;z-index:30;
+    display:flex;align-items:center;gap:14px;
+    padding:14px 26px;
+    border-bottom:1px solid rgba(255,255,255,.9);
+    background:rgba(255,255,255,.66);
+    backdrop-filter:saturate(180%) blur(20px);
+    box-shadow:0 6px 24px rgba(30,60,120,.06);
+  }
+  .logo{width:36px;height:36px;border-radius:8px;object-fit:contain}
+  .brand{line-height:1.15}
+  .sysname{font-size:12px;color:var(--muted)}
+  .title{font-size:18px;font-weight:800;color:var(--ink)}
+  .spacer{flex:1}
+  .pill{
+    display:inline-flex;align-items:center;gap:7px;
+    border:1px solid rgba(255,255,255,.85);
+    background:rgba(255,255,255,.62);
+    color:var(--muted);
+    border-radius:999px;
+    padding:7px 13px;
+    font-size:12px;
+    font-weight:700;
+    white-space:nowrap;
+  }
+  .pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+  .pill.ok{color:var(--green);background:var(--green-bg);border-color:#bfe5d0}
+  .pill.fail{color:var(--red);background:var(--red-bg);border-color:#f0c2bd}
+  .navbtn{
+    border:1px solid var(--line-strong);
+    background:rgba(255,255,255,.85);
+    color:var(--blue);
+    border-radius:999px;
+    padding:8px 16px;
+    text-decoration:none;
+    font-weight:800;
+    transition:.15s;
+  }
+  .navbtn:hover{border-color:var(--blue);background:var(--blue);color:#fff}
+  .wrap{width:100vw;max-width:none;margin:0;padding:10px 14px 12px;height:calc(100vh - 69px)}
+  .hero{
+    display:grid;
+    grid-template-columns:1fr;
+    grid-template-rows:minmax(0,1fr) 260px;
+    gap:10px;
+    align-items:stretch;
+    height:100%;
+    min-height:0;
+  }
+  @media(max-width:1050px){.hero{grid-template-columns:1fr}}
+  .panel{
+    background:rgba(255,255,255,.72);
+    border:1px solid rgba(255,255,255,.95);
+    box-shadow:var(--shadow);
+    backdrop-filter:blur(10px);
+    border-radius:20px;
+    overflow:hidden;
+    min-height:0;
+  }
+  .panel-head{
+    min-height:44px;
+    display:flex;align-items:center;gap:10px;
+    padding:10px 16px;
+    border-bottom:1px solid var(--line);
+    background:rgba(255,255,255,.48);
+  }
+  .panel-title{font-size:15px;font-weight:900}
+  .panel-note{margin-left:auto;color:var(--muted);font-size:12px}
+  .panel-body{padding:14px;min-height:0}
+  .camera-panel .panel-body{height:calc(100% - 44px);display:flex;flex-direction:column;padding:8px}
+  .viewport-grid{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:8px;
+    flex:1 1 auto;
+    min-height:0;
+    align-items:stretch;
+    justify-items:stretch;
+  }
+  .viewport-grid.single{grid-template-columns:minmax(0,1fr)}
+  .viewport-grid.single .feed{max-width:none}
+  @media(max-width:760px){.viewport-grid{grid-template-columns:1fr}}
+  .feed{
+    margin:0;
+    display:flex;
+    flex-direction:column;
+    width:100%;
+    height:100%;
+    min-width:0;
+    min-height:0;
+    overflow:hidden;
+    border-radius:12px;
+    background:#080d13;
+    position:relative;
+  }
+  .feed figcaption{
+    position:absolute;
+    top:8px;
+    left:8px;
+    right:8px;
+    z-index:3;
+    display:flex;justify-content:space-between;align-items:center;
+    color:#dbe7f5;
+    background:rgba(17,25,35,.82);
+    backdrop-filter:blur(8px);
+    border:1px solid rgba(255,255,255,.10);
+    border-radius:10px;
+    padding:7px 10px;
+    font-size:12px;
+    font-weight:800;
+  }
+  .feed img{
+    display:block;
+    width:100%;
+    height:0;
+    min-height:0;
+    flex:1;
+    object-fit:contain;
+    background:#080d13;
+    border:1px solid #111923;
+    border-radius:12px;
+    transform-origin:center center;
+    cursor:grab;
+    user-select:none;
+    will-change:transform;
+    touch-action:none;
+  }
+  .feed img.dragging{cursor:grabbing}
+  .zoom-tools{
+    position:absolute;
+    left:auto;
+    right:12px;
+    bottom:12px;
+    z-index:4;
+    display:flex;
+    align-items:center;
+    gap:7px;
+    padding:6px 8px;
+    border:1px solid rgba(255,255,255,.20);
+    background:rgba(13,20,29,.88);
+    backdrop-filter:blur(8px);
+    color:#dbe7f5;
+    border-radius:12px;
+    font-size:12px;
+  }
+  .zoom-btn{
+    border:1px solid rgba(255,255,255,.16);
+    background:rgba(255,255,255,.07);
+    color:#fff;
+    border-radius:8px;
+    padding:4px 9px;
+    font-weight:900;
+    cursor:pointer;
+  }
+  .zoom-val{min-width:46px;text-align:right;font-family:Consolas,monospace}
+  .zoom-hint{display:none}
+  @media(max-width:1180px){
+    body{overflow:auto}
+    .wrap{height:auto}
+    .hero{grid-template-columns:1fr;grid-template-rows:auto auto;height:auto}
+    .camera-panel .panel-body{height:auto}
+    .viewport-grid{height:auto}
+    .feed{width:min(100%,420px)}
+    .feed img{height:0}
+    .result-card .panel-body{grid-template-columns:1fr}
+    .slots{grid-template-columns:repeat(2,minmax(0,1fr))}
+  }
+  .actions{
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    gap:10px;
+    margin-top:6px;
+    flex:none;
+    flex-wrap:wrap;
+  }
+  .btn{
+    border:1px solid transparent;
+    border-radius:999px;
+    min-height:32px;
+    min-width:104px;
+    padding:6px 13px;
+    font-size:12px;
+    font-weight:900;
+    cursor:pointer;
+    transition:.15s;
+  }
+  .btn:disabled{opacity:.58;cursor:not-allowed}
+  .btn.primary{background:linear-gradient(135deg,#0a5cd5,#3f86ff);color:#fff;box-shadow:0 12px 26px rgba(10,92,213,.22)}
+  .btn.primary:hover:not(:disabled){background:#0d4d98}
+  .btn.green{background:linear-gradient(135deg,#0f9d58,#19b96b);color:#fff;box-shadow:0 12px 26px rgba(15,157,88,.20)}
+  .btn.green:hover:not(:disabled){background:#0d6d3e}
+  .btn.red{background:linear-gradient(135deg,#d93025,#f15b4f);color:#fff;box-shadow:0 12px 26px rgba(217,48,37,.18)}
+  .btn.red:hover:not(:disabled){background:#a81f18}
+  .btn.ghost{background:#fff;color:var(--steel);border-color:var(--line-strong)}
+  .btn.ghost:hover:not(:disabled){background:var(--soft)}
+  .result-card{
+    display:block;
+  }
+  .result-card .panel-body{
+    display:grid;
+    grid-template-columns:280px minmax(330px,.78fr) minmax(540px,1.22fr);
+    gap:10px;
+    align-items:stretch;
+  }
+  .verdict{
+    display:grid;
+    grid-template-columns:112px 1fr;
+    gap:10px;
+    align-items:stretch;
+  }
+  @media(max-width:560px){.verdict{grid-template-columns:1fr}}
+  .verdict-main{
+    border-radius:14px;
+    padding:18px;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    min-height:104px;
+    border:1px solid var(--line);
+    background:#f7f9fc;
+  }
+  .verdict-main.pass{background:var(--green-bg);border-color:#bfe5d0}
+  .verdict-main.fail{background:var(--red-bg);border-color:#f0c2bd}
+  .verdict-main.unknown{background:var(--amber-bg);border-color:#ecd49c}
+  .verdict-label{font-size:13px;color:var(--muted);font-weight:800}
+  .verdict-word{font-size:38px;line-height:1.05;font-weight:1000;letter-spacing:0;margin-top:6px}
+  .verdict-main.pass .verdict-word{color:var(--green)}
+  .verdict-main.fail .verdict-word{color:var(--red)}
+  .verdict-main.unknown .verdict-word{color:var(--amber)}
+  .verdict-meta{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:10px;
+  }
+  .metric{
+    border:1px solid var(--line);
+    background:#fff;
+    border-radius:14px;
+    padding:10px;
+    min-height:52px;
+  }
+  .metric .n{font-size:25px;font-weight:1000;line-height:1}
+  .metric .t{font-size:12px;color:var(--muted);margin-top:6px;font-weight:800}
+  .metric.pass .n{color:var(--green)}
+  .metric.fail .n{color:var(--red)}
+  .metric.total .n{color:var(--blue)}
+  .metric.rate .n{color:var(--steel)}
+  .slots{
+    display:grid;
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    gap:10px;
+    margin-top:0;
+  }
+  @media(max-width:760px){.slots{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  .slot{
+    border:1px solid var(--line);
+    border-radius:14px;
+    background:#fff;
+    min-height:62px;
+    padding:10px;
+  }
+  .slot.pass{border-color:#bfe5d0;background:var(--green-bg)}
+  .slot.fail{border-color:#f0c2bd;background:var(--red-bg)}
+  .slot.unknown{border-color:#ecd49c;background:var(--amber-bg)}
+  .slot-top{display:flex;justify-content:space-between;gap:8px;align-items:center}
+  .slot-name{font-weight:1000}
+  .slot-status{font-size:18px;font-weight:1000}
+  .slot.pass .slot-status{color:var(--green)}
+  .slot.fail .slot-status{color:var(--red)}
+  .slot.unknown .slot-status{color:var(--amber)}
+  .slot-detail{font-size:12px;color:var(--muted);margin-top:5px;word-break:break-word;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .slot-label{font-size:11px;color:#39465a;margin-top:4px;line-height:1.35;word-break:break-all}
+  .slot-label b{color:var(--ink)}
+  .tray{
+    margin-top:0;
+    border:1px solid rgba(10,92,213,.18);
+    background:linear-gradient(135deg,rgba(10,92,213,.06),rgba(252,134,21,.05));
+    border-radius:14px;
+    padding:10px;
+  }
+  .tray-head{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    margin-bottom:8px;
+    color:var(--blue-deep);
+    font-size:12px;
+    font-weight:900;
+  }
+  .tray-note{color:var(--muted);font-weight:700}
+  .tray-row{
+    display:grid;
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    gap:8px;
+  }
+  .tray-cell{
+    min-height:44px;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    align-items:center;
+    gap:3px;
+    border:1px solid var(--line);
+    border-radius:12px;
+    background:rgba(255,255,255,.82);
+    color:var(--steel);
+    font-weight:1000;
+  }
+  .tray-cell.pass{background:var(--green-bg);border-color:#bfe5d0;color:var(--green)}
+  .tray-cell.fail{background:var(--red-bg);border-color:#f0c2bd;color:var(--red)}
+  .tray-cell.unknown{background:var(--amber-bg);border-color:#ecd49c;color:var(--amber)}
+  .tray-cell .pos{font-size:17px;line-height:1}
+  .tray-cell .res{font-size:12px}
+  .run-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin-top:8px}
+  .run-kv{border-top:1px solid var(--line);padding-top:4px;font-size:11px;color:var(--muted)}
+  .run-kv strong{display:block;color:var(--ink);font-size:13px}
+  .run-stages{grid-column:1/-1;font-size:10px;color:var(--muted);line-height:1.4;word-break:break-word}
+  @media(max-width:760px){.tray-row{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  .history{
+    display:contents;
+  }
+  .history > .panel:not(.settings-panel){display:none}
+  @media(max-width:1050px){.history{grid-template-columns:1fr}}
+  .table-wrap{overflow:auto;max-height:168px}
+  .history table thead{display:none}
+  .history td{padding:8px 9px}
+  .history td:nth-child(5),.history th:nth-child(5){display:none}
+  .history td:nth-child(4){
+    max-width:520px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  /* 标注图默认隐藏，renderAnnotated 拿到图后加 .has-annotated 才显示 ——
+     原来靠一个 body.show-annotated 开关，但全文没有任何地方加过那个 class，
+     导致标注图永远看不到（后端一直在正常生成）。 */
+  .annotated-section{display:none}
+  body.show-annotated .annotated-section,
+  .annotated-section.has-annotated{display:block}
+  .settings-panel{
+    position:fixed;
+    top:84px;
+    right:24px;
+    z-index:60;
+    width:min(720px,calc(100vw - 48px));
+    max-height:calc(100vh - 108px);
+    overflow:auto;
+    display:none;
+    box-shadow:var(--shadow-strong);
+  }
+  body.settings-open .settings-panel{display:block}
+  .settings-backdrop{
+    position:fixed;
+    inset:0;
+    z-index:55;
+    background:rgba(29,35,48,.18);
+    backdrop-filter:blur(2px);
+    display:none;
+  }
+  body.settings-open .settings-backdrop{display:block}
+  table{width:100%;border-collapse:collapse}
+  th,td{padding:10px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  th{font-size:12px;color:var(--muted);background:#f7f9fc;position:sticky;top:0;z-index:1}
+  td{font-size:13px}
+  .tag{
+    display:inline-flex;align-items:center;justify-content:center;
+    min-width:58px;border-radius:999px;padding:3px 9px;font-size:12px;font-weight:900;
+  }
+  .tag.pass{background:var(--green-bg);color:var(--green)}
+  .tag.fail{background:var(--red-bg);color:var(--red)}
+  .tag.unknown{background:var(--amber-bg);color:var(--amber)}
+  .mono{font-family:Consolas,"SF Mono",monospace}
+  .muted{color:var(--muted)}
+  .settings-grid{
+    display:grid;
+    grid-template-columns:repeat(4,minmax(120px,1fr));
+    gap:10px;
+  }
+  @media(max-width:900px){.settings-grid{grid-template-columns:repeat(2,minmax(120px,1fr))}}
+  .field{display:flex;flex-direction:column;gap:5px}
+  .field label{font-size:12px;color:var(--muted);font-weight:800}
+  .field input,.field select{
+    width:100%;
+    border:1px solid var(--line-strong);
+    background:#fff;
+    color:var(--ink);
+    border-radius:14px;
+    padding:9px 10px;
+    outline:none;
+  }
+  .field input:focus,.field select:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(21,95,184,.12)}
+  details.tune{margin-top:12px}
+  details.tune summary{
+    cursor:pointer;
+    color:var(--blue-deep);
+    font-weight:900;
+    padding:10px 0 0;
+  }
+  .tune-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:12px;
+    margin-top:10px;
+  }
+  @media(max-width:900px){.tune-grid{grid-template-columns:1fr}}
+  .tune-box{
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:12px;
+    background:#fbfcfe;
+  }
+  .tune-title{font-weight:1000;margin-bottom:10px}
+  .tune-row{display:grid;grid-template-columns:88px 1fr 70px;gap:8px;align-items:center;margin-top:8px}
+  .tiny{font-size:12px;color:var(--muted);margin-top:8px}
+  .image-pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .image-pair img{
+    width:100%;
+    aspect-ratio:4/3;
+    object-fit:contain;
+    border:1px solid var(--line);
+    background:#080d13;
+    border-radius:14px;
+  }
+  .empty{
+    border:1px dashed var(--line-strong);
+    background:#fbfcfe;
+    color:var(--muted);
+    border-radius:14px;
+    padding:28px;
+    text-align:center;
+    font-weight:800;
+  }
+  .toast{
+    position:fixed;right:22px;bottom:22px;z-index:80;
+    background:#111923;color:#fff;
+    border-radius:8px;
+    box-shadow:var(--shadow);
+    padding:11px 15px;
+    opacity:0;
+    transform:translateY(8px);
+    pointer-events:none;
+    transition:.2s;
+  }
+  .toast.show{opacity:1;transform:none}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <img class="logo" src="/logo.png" alt="云小圈" />
+  <div class="brand">
+    <div class="sysname">云小圈AI硬件质检系统</div>
+    <div class="title">实时质检监控</div>
+  </div>
+  <span class="spacer"></span>
+  <span class="pill" id="cam-status">检测相机</span>
+  <span class="pill ok" id="auto-status">手动规则模式</span>
+  <button class="navbtn" id="settings-toggle" type="button">检测设置</button>
+  <a class="navbtn" href="/workbench">返回工作台</a>
+  <a class="navbtn" href="/">首页</a>
+</div>
+
+<main class="wrap">
+  <section class="hero">
+    <div class="panel camera-panel">
+      <div class="panel-head">
+        <div class="panel-title">双相机实时画面</div>
+        <div class="panel-note" id="cam-devs">未读取设备</div>
+      </div>
+      <div class="panel-body">
+        <div class="viewport-grid" id="viewport-grid">
+          <figure class="feed" id="feed-front">
+            <figcaption><span>上相机 · 正面</span><span id="front-state">待连接</span></figcaption>
+            <img id="view-front" alt="上相机实时画面">
+            <div class="zoom-tools">
+              <button class="zoom-btn" type="button" onclick="zoomStep('front',-0.25)">-</button>
+              <button class="zoom-btn" type="button" onclick="zoomStep('front',0.25)">+</button>
+              <span class="zoom-val" id="zoomval-front">100%</span>
+              <button class="zoom-btn" type="button" onclick="resetZoom('front')">复位</button>
+              <span class="zoom-hint">滚轮缩放 · 拖动画面</span>
+            </div>
+          </figure>
+          <figure class="feed" id="feed-back">
+            <figcaption><span>下相机 · 反面</span><span id="back-state">待连接</span></figcaption>
+            <img id="view-back" alt="下相机实时画面">
+            <div class="zoom-tools">
+              <button class="zoom-btn" type="button" onclick="zoomStep('back',-0.25)">-</button>
+              <button class="zoom-btn" type="button" onclick="zoomStep('back',0.25)">+</button>
+              <span class="zoom-val" id="zoomval-back">100%</span>
+              <button class="zoom-btn" type="button" onclick="resetZoom('back')">复位</button>
+              <span class="zoom-hint">滚轮缩放 · 拖动画面</span>
+            </div>
+          </figure>
+        </div>
+        <div class="actions">
+          <button class="btn primary" id="manual-go">拍照并检测</button>
+          <button class="btn ghost" id="preview-refresh">刷新画面</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel result-card">
+      <div class="panel-head">
+        <div class="panel-title">当前结果</div>
+        <div class="panel-note" id="last-time">等待检测</div>
+      </div>
+      <div class="panel-body">
+        <div class="verdict">
+          <div class="verdict-main unknown" id="verdict-main">
+            <div class="verdict-label">逐根判定</div>
+            <div class="verdict-word" id="verdict-word">待检</div>
+          </div>
+          <div class="verdict-meta">
+            <div class="metric total"><div class="n" id="stat-total">0</div><div class="t">累计根数</div></div>
+            <div class="metric pass"><div class="n" id="stat-pass">0</div><div class="t">合格</div></div>
+            <div class="metric fail"><div class="n" id="stat-fail">0</div><div class="t">不合格</div></div>
+            <div class="metric rate"><div class="n" id="stat-rate">--</div><div class="t">合格率</div></div>
+          </div>
+        </div>
+        <div class="tray">
+          <div class="tray-head">
+            <span>托盘槽位示意</span>
+            <span class="tray-note">操作员面对托盘，从左到右为 1-4 槽</span>
+          </div>
+          <div class="tray-row" id="tray-map">
+            <div class="tray-cell unknown"><div class="pos">1</div><div class="res">待检</div></div>
+            <div class="tray-cell unknown"><div class="pos">2</div><div class="res">待检</div></div>
+            <div class="tray-cell unknown"><div class="pos">3</div><div class="res">待检</div></div>
+            <div class="tray-cell unknown"><div class="pos">4</div><div class="res">待检</div></div>
+          </div>
+          <div class="run-summary" id="run-summary">
+            <div class="run-kv"><strong>--</strong>单次检测耗时</div>
+            <div class="run-kv"><strong>0</strong>本次 Token</div>
+            <div class="run-stages">等待手动拍照检测</div>
+          </div>
+        </div>
+        <div class="slots" id="slots">
+          <div class="empty" style="grid-column:1/-1">检测后按槽位显示每一根内存条的合格或不合格结果</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="history">
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">检测记录</div>
+        <div class="panel-note">完整记录请到质检看板查看</div>
+      </div>
+      <div class="panel-body table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:86px">时间</th>
+              <th style="width:76px">槽位</th>
+              <th style="width:86px">结果</th>
+              <th>SN / 原因</th>
+              <th style="width:82px">颗粒</th>
+              <th style="width:82px">耗时</th>
+              <th style="width:82px">Token</th>
+            </tr>
+          </thead>
+          <tbody id="history-body">
+            <tr><td colspan="7" class="muted">暂无检测记录</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel settings-panel" id="settings-panel">
+      <div class="panel-head">
+        <div class="panel-title">检测设置</div>
+        <div class="panel-note" id="operator-name">质检员读取中</div>
+      </div>
+      <div class="panel-body">
+        <div class="settings-grid">
+          <div class="field">
+            <label for="mode">识别方式</label>
+            <select id="mode">
+              <option value="rules" selected>规则识别（整图找日期）</option>
+              <option value="geo">几何定位（现算框，含 PCB/PMIC/SOT）</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="single-flow">单相机流程</label>
+            <select id="single-flow">
+              <option value="one" selected>只拍一面，直接识别</option>
+              <option value="two">拍正面 → 翻面 → 拍反面</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="template-id">四槽定位模板</label>
+            <select id="template-id"><option value="">默认模板</option></select>
+          </div>
+          <div class="field">
+            <label for="threshold">日期阈值</label>
+            <input id="threshold" type="number" min="0" step="1" placeholder="默认" />
+          </div>
+          <div class="field">
+            <label for="year">当前年份</label>
+            <input id="year" type="number" min="2020" max="2099" placeholder="自动" />
+          </div>
+        </div>
+
+        <details class="tune">
+          <summary>相机参数</summary>
+          <div class="tune-grid">
+            <div class="tune-box">
+              <div class="tune-title">上相机 · 正面</div>
+              <div class="tune-row"><label>曝光</label><input id="exp-front" type="number" min="1" step="100"><span>us</span></div>
+              <div class="tune-row"><label>增益</label><input id="gain-front" type="number" step="0.1"><span>dB</span></div>
+              <div class="tune-row"><label>方向</label><select id="orient-front"><option value="none">不翻转</option><option value="fliph">左右镜像</option><option value="flipv">上下翻转</option><option value="rot180">180度</option></select><span></span></div>
+              <button class="btn ghost" style="width:100%;margin-top:10px" onclick="applyCam('front')">应用上相机参数</button>
+              <div class="tiny" id="camrange-front"></div>
+            </div>
+            <div class="tune-box">
+              <div class="tune-title">下相机 · 反面</div>
+              <div class="tune-row"><label>曝光</label><input id="exp-back" type="number" min="1" step="100"><span>us</span></div>
+              <div class="tune-row"><label>增益</label><input id="gain-back" type="number" step="0.1"><span>dB</span></div>
+              <div class="tune-row"><label>方向</label><select id="orient-back"><option value="none">不翻转</option><option value="fliph">左右镜像</option><option value="flipv">上下翻转</option><option value="rot180">180度</option></select><span></span></div>
+              <button class="btn ghost" style="width:100%;margin-top:10px" onclick="applyCam('back')">应用下相机参数</button>
+              <div class="tiny" id="camrange-back"></div>
+            </div>
+          </div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel annotated-section" style="margin-top:16px">
+    <div class="panel-head">
+      <div class="panel-title">最近标注图</div>
+      <div class="panel-note" id="image-note">检测完成后刷新</div>
+    </div>
+    <div class="panel-body" id="annotated-box">
+      <div class="empty">暂无标注图</div>
+    </div>
+  </section>
+</main>
+
+<div class="settings-backdrop" id="settings-backdrop"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const state = {
+  started: false,
+  autoWant: false,
+  autoES: null,
+  operator: "",
+  history: [],
+  seenRecordIds: new Set(),
+  recordsTimer: null,
+  stats: { total: 0, pass: 0, fail: 0, unknown: 0 },
+  cameraMode: "dual",
+  cameraBackend: "hik",
+  activeRoles: ["front", "back"],
+  singleCapture: null
+};
+const previewView = {
+  front: { scale: 1, x: 0, y: 0, dragging: false, sx: 0, sy: 0, ox: 0, oy: 0 },
+  back: { scale: 1, x: 0, y: 0, dragging: false, sx: 0, sy: 0, ox: 0, oy: 0 }
+};
+
+function $(id){ return document.getElementById(id); }
+function esc(s){
+  return (s == null ? "" : String(s)).replace(/[&<>"]/g, c => ({
+    "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;"
+  }[c]));
+}
+function toast(msg){
+  const el = $("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  setTimeout(() => el.classList.remove("show"), 2200);
+}
+function verdictText(v){
+  if(v === "mixed") return "逐根";
+  if(v === "pass") return "合格";
+  if(v === "fail") return "不合格";
+  return "待定";
+}
+function verdictClass(v){
+  if(v === "mixed") return "unknown";
+  if(v === "pass") return "pass";
+  if(v === "fail") return "fail";
+  return "unknown";
+}
+function timeText(){
+  return new Date().toLocaleTimeString("zh-CN", { hour12:false, hour:"2-digit", minute:"2-digit", second:"2-digit" });
+}
+// 单面流程（只拍一面直接识别）——默认。选"two"才走原来的翻面两步流程。
+function singleOneShot(){
+  const el = $("single-flow");
+  return !el || el.value !== "two";
+}
+function setBusy(busy, label){
+  $("manual-go").disabled = busy;
+  if(busy){ $("manual-go").textContent = label || "检测中"; return; }
+  if(state.singleCapture){ $("manual-go").textContent = "已拍正面，翻面后继续"; return; }
+  $("manual-go").textContent = state.cameraMode === "single"
+    ? (singleOneShot() ? "拍照并检测（单面）" : "拍摄正面")
+    : "拍照并检测";
+}
+
+function setCameraMode(mode, activeRoles){
+  state.cameraMode = mode === "single" ? "single" : "dual";
+  state.activeRoles = Array.isArray(activeRoles) && activeRoles.length ? activeRoles :
+    (state.cameraMode === "single" ? ["front"] : ["front", "back"]);
+  const single = state.cameraMode === "single";
+  $("viewport-grid").classList.toggle("single", single);
+  $("feed-back").style.display = single ? "none" : "";
+  $("auto-status").textContent = single ? "单相机 · 手动规则模式" : "双相机 · 手动规则模式";
+  setBusy(false);
+}
+function previewUrl(side){
+  return state.cameraBackend === "uvc"
+    ? "/api/camera/preview/" + side + "?t=" + Date.now()
+    : "/api/hik/preview?side=" + side + "&t=" + Date.now();
+}
+function applyPreviewTransform(side){
+  const st = previewView[side];
+  const img = $("view-" + side);
+  if(!img) return;
+  img.style.transform = `translate(${st.x}px, ${st.y}px) scale(${st.scale})`;
+  const val = $("zoomval-" + side);
+  if(val) val.textContent = Math.round(st.scale * 100) + "%";
+}
+function setZoom(side, value){
+  const st = previewView[side];
+  const next = Math.max(1, Math.min(6, parseFloat(value) || 1));
+  st.scale = next;
+  if(next === 1){ st.x = 0; st.y = 0; }
+  applyPreviewTransform(side);
+}
+function zoomStep(side, delta){
+  const st = previewView[side];
+  setZoom(side, +(st.scale + delta).toFixed(2));
+}
+function resetZoom(side){
+  const st = previewView[side];
+  st.scale = 1;
+  st.x = 0;
+  st.y = 0;
+  applyPreviewTransform(side);
+}
+function bindPreviewTools(side){
+  const img = $("view-" + side);
+  if(!img || img.dataset.zoomBound) return;
+  img.dataset.zoomBound = "1";
+  img.addEventListener("dragstart", e => e.preventDefault());
+  img.addEventListener("wheel", e => {
+    e.preventDefault();
+    const st = previewView[side];
+    const delta = e.deltaY < 0 ? 0.18 : -0.18;
+    setZoom(side, +(st.scale + delta).toFixed(2));
+  }, { passive:false });
+  img.addEventListener("pointerdown", e => {
+    const st = previewView[side];
+    st.dragging = true;
+    st.sx = e.clientX;
+    st.sy = e.clientY;
+    st.ox = st.x;
+    st.oy = st.y;
+    img.classList.add("dragging");
+    img.setPointerCapture(e.pointerId);
+  });
+  img.addEventListener("pointermove", e => {
+    const st = previewView[side];
+    if(!st.dragging) return;
+    st.x = st.ox + e.clientX - st.sx;
+    st.y = st.oy + e.clientY - st.sy;
+    applyPreviewTransform(side);
+  });
+  const end = e => {
+    const st = previewView[side];
+    st.dragging = false;
+    img.classList.remove("dragging");
+    try{ img.releasePointerCapture(e.pointerId); }catch(_){}
+  };
+  img.addEventListener("pointerup", end);
+  img.addEventListener("pointercancel", end);
+  img.addEventListener("dblclick", () => resetZoom(side));
+  applyPreviewTransform(side);
+}
+
+async function initOperator(){
+  try{
+    const d = await (await fetch("/api/me")).json();
+    if(d.authenticated) state.operator = d.username || "";
+  }catch(_){}
+  $("operator-name").textContent = state.operator ? ("质检员：" + state.operator) : "未读取到质检员";
+}
+
+async function loadTemplates(){
+  try{
+    const d = await (await fetch("/api/templates")).json();
+    const sel = $("template-id");
+    const list = d.templates || [];
+    sel.innerHTML = '<option value="">默认模板</option>' + list.map(t => {
+      const id = t.id || t.template_id || "";
+      const name = t.name || t.label || id;
+      return `<option value="${esc(id)}">${esc(name)}</option>`;
+    }).join("");
+  }catch(_){}
+}
+
+async function camStatus(){
+  const el = $("cam-status");
+  try{
+    const d = await (await fetch("/api/hik/status")).json();
+    let devs = d.devices || [];
+    if(!d.sdk || !devs.length){
+      const uvc = await (await fetch("/api/camera/status")).json();
+      const roles = ["front","back"].filter(side => uvc[side]);
+      if(roles.length){
+        state.cameraBackend = "uvc";
+        setCameraMode(roles.length === 1 ? "single" : "dual", roles);
+        el.textContent = "USB 相机已连接";
+        el.className = "pill ok";
+        $("cam-devs").textContent = roles.length === 1 ? "单 USB 相机" : "双 USB 相机";
+        if(!state.started) dualPlay();
+        return;
+      }
+      el.textContent = d.error ? ("相机不可用 · " + d.error) : "未发现相机";
+      el.className = "pill fail";
+      return;
+    }
+    state.cameraBackend = "hik";
+    setCameraMode(d.camera_mode || ((d.active_roles || []).length === 1 ? "single" : "dual"), d.active_roles);
+    el.textContent = "已连接 " + devs.length + " 台";
+    el.className = "pill ok";
+    $("cam-devs").textContent = devs.map(c => c.sn || c.ip || c.model).filter(Boolean).join(" / ") || "相机在线";
+    if(!state.started) dualPlay();
+  }catch(e){
+    el.textContent = "状态获取失败";
+    el.className = "pill fail";
+  }
+}
+
+function bindReconnect(side){
+  const img = $("view-" + side);
+  const flag = $(side + "-state");
+  img.onload = () => {
+    img.dataset.retry = "0";
+    flag.textContent = "取流中";
+  };
+  img.onerror = () => {
+    if(!state.started) return;
+    const n = Math.min(parseInt(img.dataset.retry || "0", 10) + 1, 6);
+    img.dataset.retry = String(n);
+    const wait = Math.min(1500 * Math.pow(2, n - 1), 8000);
+    flag.textContent = "重连 " + n;
+    img.removeAttribute("src");
+    clearTimeout(img._rt);
+    img._rt = setTimeout(() => {
+      if(state.started) img.src = previewUrl(side);
+    }, wait);
+  };
+}
+function dualPlay(){
+  state.started = true;
+  bindPreviewTools("front");
+  if(state.activeRoles.includes("back")) bindPreviewTools("back");
+  bindReconnect("front");
+  if(state.activeRoles.includes("back")) bindReconnect("back");
+  $("view-front").dataset.retry = "0";
+  if(state.activeRoles.includes("back")) $("view-back").dataset.retry = "0";
+  $("view-front").src = previewUrl("front");
+  if(state.activeRoles.includes("back")) $("view-back").src = previewUrl("back");
+  applyPreviewTransform("front");
+  if(state.activeRoles.includes("back")) applyPreviewTransform("back");
+  if(state.cameraBackend === "hik"){
+    loadCam("front");
+    if(state.activeRoles.includes("back")) loadCam("back");
+    loadOrient();
+  }
+}
+
+async function loadCam(side){
+  try{
+    const e = await (await fetch("/api/hik/exposure?side=" + side)).json();
+    const g = await (await fetch("/api/hik/gain?side=" + side)).json();
+    if(e.ok) $("exp-" + side).value = Math.round(e.cur);
+    if(g.ok) $("gain-" + side).value = g.cur;
+    const range = [];
+    if(e.ok) range.push("曝光 " + Math.round(e.min) + "-" + Math.round(e.max) + "us");
+    if(g.ok) range.push("增益 " + g.min + "-" + g.max + "dB");
+    $("camrange-" + side).textContent = range.join(" · ");
+  }catch(_){}
+}
+async function applyCam(side){
+  try{
+    const exp = $("exp-" + side).value;
+    const gain = $("gain-" + side).value;
+    if(exp !== ""){
+      const fd = new FormData();
+      fd.append("exposure_us", exp);
+      fd.append("side", side);
+      const d = await (await fetch("/api/hik/exposure", { method:"POST", body:fd })).json();
+      if(!d.ok) throw new Error(d.error || "曝光设置失败");
+    }
+    if(gain !== ""){
+      const fd = new FormData();
+      fd.append("gain_db", gain);
+      fd.append("side", side);
+      const d = await (await fetch("/api/hik/gain", { method:"POST", body:fd })).json();
+      if(!d.ok) throw new Error(d.error || "增益设置失败");
+    }
+    await setOrient(side, $("orient-" + side).value, false);
+    await loadCam(side);
+    toast((side === "front" ? "上相机" : "下相机") + "参数已应用");
+  }catch(e){
+    alert("设置失败：" + (e.message || e));
+  }
+}
+async function loadOrient(){
+  try{
+    const d = await (await fetch("/api/hik/orient")).json();
+    if(d.ok){
+      for(const side of ["front","back"]){
+        if(d.orient && d.orient[side]) $("orient-" + side).value = d.orient[side];
+      }
+    }
+  }catch(_){}
+}
+async function setOrient(side, mode, notify = true){
+  const fd = new FormData();
+  fd.append("side", side);
+  fd.append("mode", mode);
+  const d = await (await fetch("/api/hik/orient", { method:"POST", body:fd })).json();
+  if(!d.ok) throw new Error(d.error || "方向设置失败");
+  $("view-" + side).src = "/api/hik/preview?side=" + side + "&t=" + Date.now();
+  if(notify) toast((side === "front" ? "上相机" : "下相机") + "方向已更新");
+}
+
+function buildForm(){
+  const fd = new FormData();
+  fd.append("mode", ($("mode") && $("mode").value) || "rules");
+  fd.append("operator", state.operator || "");
+  const tpl = $("template-id").value;
+  const th = $("threshold").value;
+  const y = $("year").value;
+  if(tpl) fd.append("template_id", tpl);
+  if(th !== "") fd.append("threshold", th);
+  if(y !== "") fd.append("current_year", y);
+  return fd;
+}
+
+async function manualCapture(){
+  if(state.cameraMode === "single"){
+    return manualSingleCapture();
+  }
+  setBusy(true, "拍摄识别中");
+  try{
+    const d = await (await fetch("/api/hik/capture_and_save", { method:"POST", body:buildForm() })).json();
+    if(d.ok === false && d.error) throw new Error(d.error);
+    consumeResult(d);
+    toast("检测完成");
+  }catch(e){
+    toast("检测失败：" + (e.message || e));
+  }finally{
+    setBusy(false);
+  }
+}
+
+// 单面：拍一张就走完整识别流程，不等翻面。
+async function manualOneSideCapture(){
+  setBusy(true, "拍摄识别中");
+  try{
+    const fd = buildForm();
+    fd.append("backend", state.cameraBackend);
+    const d = await (await fetch("/api/hik/single/capture_and_save", { method:"POST", body:fd })).json();
+    if(d.ok === false && d.error) throw new Error(d.error);
+    consumeResult(d);
+    toast(d.single_side_warn || "单面检测完成");
+  }catch(e){
+    toast("检测失败：" + (e.message || e));
+  }finally{
+    setBusy(false);
+  }
+}
+
+async function manualSingleCapture(){
+  if(singleOneShot()){
+    state.singleCapture = null;                 // 切回单面流程时清掉半途的两步状态
+    return manualOneSideCapture();
+  }
+  const firstStep = !state.singleCapture;
+  setBusy(true, firstStep ? "拍摄正面中" : "拍摄反面并识别中");
+  try{
+    if(firstStep){
+      const fd = new FormData();
+      fd.append("backend", state.cameraBackend);
+      const d = await (await fetch("/api/hik/single/capture_front", { method:"POST", body:fd })).json();
+      if(!d.ok) throw new Error(d.error || "正面拍摄失败");
+      state.singleCapture = { uid:d.uid, captureSec:d.capture_sec || 0 };
+      toast("正面已拍摄，请将整盘翻到反面后再次点击");
+      return;
+    }
+    const fd = buildForm();
+    fd.append("uid", state.singleCapture.uid);
+    fd.append("front_capture_sec", state.singleCapture.captureSec || 0);
+    fd.append("backend", state.cameraBackend);
+    const d = await (await fetch("/api/hik/single/capture_back_and_save", { method:"POST", body:fd })).json();
+    if(!d.ok && d.error) throw new Error(d.error);
+    state.singleCapture = null;
+    consumeResult(d);
+    toast("正反面检测完成");
+  }catch(e){
+    toast((firstStep ? "正面拍摄失败：" : "反面检测失败：") + (e.message || e));
+  }finally{
+    setBusy(false);
+  }
+}
+
+async function autoStart(){
+  state.autoWant = true;
+  const fd = buildForm();
+  try{
+    const d = await (await fetch("/api/hik/auto/start", { method:"POST", body:fd })).json();
+    if(!d.ok) throw new Error(d.error || "启动失败");
+    $("auto-status").textContent = "实时监控中";
+    $("auto-status").className = "pill ok";
+    openSSE();
+    toast("实时监控已开始");
+  }catch(e){
+    state.autoWant = false;
+    toast("启动失败：" + (e.message || e));
+  }
+}
+async function autoStop(){
+  state.autoWant = false;
+  if(state.autoES){
+    state.autoES.close();
+    state.autoES = null;
+  }
+  try{ await fetch("/api/hik/auto/stop", { method:"POST" }); }catch(_){}
+  $("auto-status").textContent = "手动模式";
+  $("auto-status").className = "pill";
+}
+function openSSE(){
+  if(state.autoES && state.autoES.readyState !== 2) return;
+  const es = new EventSource("/api/pipeline/stream");
+  state.autoES = es;
+  es.onmessage = e => {
+    let d;
+    try{ d = JSON.parse(e.data); }catch(_){ return; }
+    if(d.type === "result") consumeResult(d);
+  };
+  es.onerror = () => {
+    if(es.readyState === 2){
+      state.autoES = null;
+      if(state.autoWant) setTimeout(openSSE, 2500);
+    }
+  };
+}
+
+function resultItems(d){
+  if(d && d.multi && Array.isArray(d.sticks) && d.sticks.length){
+    return d.sticks.map(s => ({
+      slot: s.slot_pos || s.pos || s.slot || "-",
+      verdict: s.verdict || "unknown",
+      sn: s.sn || "",
+      snUnread: !!s.sn_unread,
+      fail: s.fail_desc || "",
+      storageCount: s.storage_count || 0,
+      recordId: s.record_id || "",
+      model: s.model || "",
+      spec: s.spec || "",
+      mfg: s.mfg || "",
+      labelData: s.label_data || {},
+      timing: d.timing || s.timing || {},
+      tokenUsage: d.token_usage || s.token_usage || {},
+      inspectionId: s.inspection_id || d.inspection_id || ""
+    }));
+  }
+  return [{
+    slot: d && (d.slot_pos || d.pos_id) || 1,
+    verdict: d && d.verdict || "unknown",
+    sn: d && d.sn || "",
+    snUnread: !!(d && d.sn_unread),
+    fail: d && d.fail_desc || "",
+    storageCount: d && d.storage_count || 0,
+    recordId: d && d.record_id || "",
+    model: d && d.model || "",
+    spec: d && d.spec || "",
+    mfg: d && d.mfg || "",
+    labelData: d && d.label_data || {},
+    timing: d && d.timing || {},
+    tokenUsage: d && d.token_usage || {},
+    inspectionId: d && d.inspection_id || ""
+  }];
+}
+function consumeResult(d){
+  if(d.duplicate){
+    toast("重复检测，已跳过入库");
+  }
+  const items = resultItems(d);
+  renderCurrent(items, displayVerdict(items, d.verdict), timeText(), d.timing || {}, d.token_usage || {});
+  // 只拍一面时必须显式提示：另一面根本没看过，别把"没检查"当"合格"。
+  // 放在 renderCurrent 之后 —— 它会重写 #last-time。
+  if(d.single_side){
+    $("last-time").innerHTML = esc(timeText())
+      + ' · <span style="color:var(--amber);font-weight:900" title="'
+      + esc(d.single_side_warn || "") + '">⚠ 仅单面，另一面未检查</span>';
+  }
+  addHistory(items);
+  renderAnnotated(d);
+}
+function displayVerdict(items, fallback){
+  if(items.length > 1) return "mixed";
+  return fallback || (items[0] && items[0].verdict) || "unknown";
+}
+function renderCurrent(items, display, when, timing = {}, tokenUsage = {}){
+  $("verdict-main").className = "verdict-main " + verdictClass(display);
+  $("verdict-word").textContent = display === "mixed" ? (items.length + "根") : verdictText(display);
+  $("last-time").textContent = when || timeText();
+  renderSlots(items);
+  renderRunSummary(timing, tokenUsage);
+}
+function sec(v){ return Number.isFinite(Number(v)) ? Number(v).toFixed(3) + "s" : "--"; }
+function renderRunSummary(timing, tokenUsage){
+  const tm = timing || {}, tk = tokenUsage || {};
+  const labels = {capture:"拍照",file_prepare:"图片准备",slot_detect_crop:"槽位/裁图",rule_ocr:"规则OCR",
+    appearance:"外观",label_decode:"二维码",parallel_analysis:"并行分析",archive:"归档",database:"入库"};
+  const stages = Object.entries(labels).filter(([key]) => tm[key] != null)
+    .map(([key,label]) => `${label} ${sec(tm[key])}`).join(" · ");
+  $("run-summary").innerHTML = `
+    <div class="run-kv"><strong>${sec(tm.total)}</strong>单次检测耗时（墙钟）</div>
+    <div class="run-kv"><strong>${esc(tk.total_tokens || 0)}</strong>本次 Token（${esc(tk.calls || 0)} 次调用）</div>
+    <div class="run-stages">${esc(stages || "等待手动拍照检测")}<br>输入 ${esc(tk.prompt_tokens || 0)} · 输出 ${esc(tk.completion_tokens || 0)}</div>`;
+}
+function renderSlots(items){
+  renderTrayMap(items);
+  $("slots").innerHTML = items.map(item => {
+    const cls = verdictClass(item.verdict);
+    const lb = item.labelData || {};
+    const detail = item.fail || (item.sn ? ("SN " + item.sn) : (item.snUnread ? "二维码未解出" : "已入库记录 #" + (item.recordId || "-")));
+    const raw = lb.raw || "";
+    return `<div class="slot ${cls}">
+      <div class="slot-top">
+        <div class="slot-name">第 ${esc(item.slot)} 槽</div>
+        <div class="slot-status">${verdictText(item.verdict)}</div>
+      </div>
+      <div class="slot-detail">${esc(detail || "无异常")}</div>
+      <div class="slot-label"><b>型号</b> ${esc(lb.model || item.model || "—")}<br><b>规格</b> ${esc(lb.spec || item.spec || "—")}<br><b>批次</b> ${esc(lb.mfg || item.mfg || "—")}<br><b>码值</b> <span title="${esc(raw)}">${esc(raw || "未识别")}</span></div>
+    </div>`;
+  }).join("");
+}
+function renderTrayMap(items){
+  const bySlot = new Map(items.map(item => [String(item.slot), item]));
+  $("tray-map").innerHTML = [1,2,3,4].map(pos => {
+    const item = bySlot.get(String(pos));
+    const cls = item ? verdictClass(item.verdict) : "unknown";
+    const txt = item ? verdictText(item.verdict) : "待检";
+    return `<div class="tray-cell ${cls}">
+      <div class="pos">${pos}</div>
+      <div class="res">${txt}</div>
+    </div>`;
+  }).join("");
+}
+function addHistory(items){
+  for(const item of items){
+    const rid = item.recordId ? String(item.recordId) : "";
+    if(rid && state.seenRecordIds.has(rid)) continue;
+    if(rid) state.seenRecordIds.add(rid);
+    state.stats.total += 1;
+    if(item.verdict === "pass") state.stats.pass += 1;
+    else if(item.verdict === "fail") state.stats.fail += 1;
+    else state.stats.unknown += 1;
+    state.history.unshift({ ...item, time: item.time || timeText() });
+  }
+  state.history = state.history.slice(0, 80);
+  renderStats();
+  renderHistory();
+}
+function renderStats(){
+  $("stat-total").textContent = state.stats.total;
+  $("stat-pass").textContent = state.stats.pass;
+  $("stat-fail").textContent = state.stats.fail;
+  const decided = state.stats.pass + state.stats.fail;
+  $("stat-rate").textContent = decided ? Math.round(state.stats.pass / decided * 100) + "%" : "--";
+}
+function renderHistory(){
+  if(!state.history.length){
+    $("history-body").innerHTML = '<tr><td colspan="7" class="muted">暂无检测记录</td></tr>';
+    return;
+  }
+  $("history-body").innerHTML = state.history.slice(0, 3).map(row => {
+    const info = row.fail || (row.sn ? ("SN " + row.sn) : (row.snUnread ? "SN 未解出" : "记录 #" + (row.recordId || "-")));
+    return `<tr>
+      <td class="mono">${esc(row.time)}</td>
+      <td>第 ${esc(row.slot)} 槽</td>
+      <td><span class="tag ${verdictClass(row.verdict)}">${verdictText(row.verdict)}</span></td>
+      <td>${esc(info)}</td>
+      <td>${esc(row.storageCount || "-")}</td>
+      <td>${sec((row.timing || {}).total)}</td>
+      <td>${esc((row.tokenUsage || {}).total_tokens || 0)}</td>
+    </tr>`;
+  }).join("");
+}
+function renderAnnotated(d){
+  const a = d.annotated || {};
+  const sect = document.querySelector(".annotated-section");
+  const imgs = [];
+  if(a.front) imgs.push({ url:a.front, title:"正面标注图" });
+  if(a.back) imgs.push({ url:a.back, title:"反面标注图" });
+  if(!imgs.length){
+    $("annotated-box").innerHTML = '<div class="empty">本次没有返回标注图</div>';
+    if(sect) sect.classList.remove("has-annotated");
+    return;
+  }
+  // 有图才展开：标注图是人工复核盲点的主要依据，藏起来等于让操作员没法核对。
+  if(sect) sect.classList.add("has-annotated");
+  $("image-note").textContent = timeText() + "（点图可放大看框）";
+  $("annotated-box").innerHTML = '<div class="image-pair">' + imgs.map(x =>
+    `<a href="${esc(x.url)}" target="_blank" title="${esc(x.title)}"><img src="${esc(x.url)}?t=${Date.now()}" alt="${esc(x.title)}"></a>`
+  ).join("") + '</div>';
+}
+
+function recordToItem(r){
+  return {
+    slot: r.slot_pos || "-",
+    verdict: r.verdict || "unknown",
+    sn: r.sn || "",
+    snUnread: !r.sn,
+    fail: r.fail_desc || "",
+    storageCount: r.storage_count || 0,
+    recordId: r.id || "",
+    time: recordTime(r.created_at),
+    model: r.model || "",
+    spec: r.spec || "",
+    mfg: r.mfg || "",
+    labelData: r.label_data || {},
+    timing: r.timing || {},
+    tokenUsage: r.token_usage || {},
+    inspectionId: r.inspection_id || ""
+  };
+}
+function recordTime(v){
+  if(!v) return timeText();
+  const s = String(v);
+  return s.length >= 19 ? s.slice(11, 19) : s;
+}
+function aggregateVerdict(items){
+  if(items.some(x => x.verdict === "fail")) return "fail";
+  if(items.length && items.every(x => x.verdict === "pass")) return "pass";
+  return "unknown";
+}
+function latestRecordGroup(records){
+  if(!records.length) return [];
+  const newest = records[0];
+  if(newest.inspection_id){
+    return records.filter(r => r.inspection_id === newest.inspection_id)
+      .slice().sort((a,b) => (a.slot_pos || 999) - (b.slot_pos || 999));
+  }
+  const stamp = newest.created_at || "";
+  const batch = newest.batch_no || "";
+  const rows = records.filter(r => {
+    if(stamp && r.created_at === stamp) return true;
+    return batch && r.batch_no === batch && r.created_at === newest.created_at;
+  });
+  return rows.length ? rows.slice().sort((a,b) => (a.slot_pos || 999) - (b.slot_pos || 999)) : [newest];
+}
+function renderAnnotatedFromRecords(records){
+  const first = records.find(r => r.annotated_front || r.annotated_back);
+  if(!first) return;
+  renderAnnotated({ annotated: { front:first.annotated_front || "", back:first.annotated_back || "" } });
+}
+function rebuildHistoryFromRecords(records){
+  state.history = [];
+  state.seenRecordIds = new Set();
+  state.stats = { total: 0, pass: 0, fail: 0, unknown: 0 };
+  const chronological = records.slice().reverse();
+  for(const r of chronological){
+    addHistory([recordToItem(r)]);
+  }
+}
+async function refreshFromRecords(initial = false){
+  try{
+    const d = await (await fetch("/api/records?limit=80")).json();
+    const records = d.records || [];
+    if(!records.length) return;
+    if(initial){
+      rebuildHistoryFromRecords(records);
+    }else{
+      const unseen = records.filter(r => r.id && !state.seenRecordIds.has(String(r.id))).reverse();
+      if(unseen.length) addHistory(unseen.map(recordToItem));
+    }
+    const latest = latestRecordGroup(records);
+    const items = latest.map(recordToItem);
+    renderCurrent(items, displayVerdict(items, aggregateVerdict(items)), recordTime(latest[0].created_at),
+      latest[0].timing || {}, latest[0].token_usage || {});
+    renderAnnotatedFromRecords(latest);
+  }catch(_){}
+}
+function startRecordsPolling(){
+  if(state.recordsTimer) return;
+  refreshFromRecords(true);
+  state.recordsTimer = setInterval(() => refreshFromRecords(false), 4000);
+  document.addEventListener("visibilitychange", () => {
+    if(!document.hidden) refreshFromRecords(false);
+  });
+}
+
+$("manual-go").onclick = manualCapture;
+$("preview-refresh").onclick = dualPlay;
+$("orient-front").onchange = e => setOrient("front", e.target.value);
+$("orient-back").onchange = e => setOrient("back", e.target.value);
+$("settings-toggle").onclick = () => document.body.classList.toggle("settings-open");
+$("settings-backdrop").onclick = () => document.body.classList.remove("settings-open");
+
+initOperator();
+loadTemplates();
+bindPreviewTools("front");
+bindPreviewTools("back");
+camStatus();
+startRecordsPolling();
+</script>
+</body>
+</html>

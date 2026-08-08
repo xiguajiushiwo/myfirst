@@ -1,0 +1,14 @@
+{
+  "active": "dashscope",
+  "providers": [
+    {
+      "id": "dashscope",
+      "name": "DashScope Qwen-VL",
+      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "model": "qwen3-vl-plus",
+      "api_key": "",
+      "timeout": 120,
+      "price_per_1k": 0.0
+    }
+  ]
+}

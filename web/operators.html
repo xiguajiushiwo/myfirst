@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>质检员管理 · 云小圈AI硬件质检系统</title>
+<link rel="icon" type="image/png" href="/favicon.png" />
+<style>
+  :root{
+    --bg:#eef4fb; --panel:#ffffff; --panel2:#f5f8ff; --panel3:#eaf2ff;
+    --line:#dce6f4; --line2:#cdddf0;
+    --txt:#111827; --dim:#5b6b82; --faint:#8695a8;
+    --blue:#0b5cff; --blue-d:#0a317d; --dram:#12b76a; --pcb:#e5484d;
+    --shadow:0 10px 30px -14px rgba(16,42,90,.18);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;color:var(--txt);line-height:1.55;
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    background:radial-gradient(1200px 720px at 50% -12%,#fbfbfd 0%,#f5f6f8 58%,#eef0f3 100%);
+    background-attachment:fixed;min-height:100vh}
+  .topbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:14px;
+    padding:13px 24px;border-bottom:1px solid var(--line);
+    background:rgba(255,255,255,.8);backdrop-filter:saturate(180%) blur(16px)}
+  .topbar .logo{height:38px;width:38px;border-radius:9px;object-fit:contain}
+  .topbar .brand{line-height:1.15}
+  .topbar .brand .sysname{font-size:12px;color:var(--dim)}
+  .topbar .brand .title{font-size:19px;font-weight:700;color:var(--txt);letter-spacing:.3px}
+  .topbar .tb-sp{flex:1}
+  .navbtn{border:1px solid var(--line2);background:#fff;color:var(--blue);font-weight:700;font-size:13px;
+    border-radius:999px;padding:8px 16px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none}
+  .navbtn:hover{background:var(--blue);color:#fff;border-color:var(--blue)}
+
+  .wrap{max-width:760px;margin:0 auto;padding:24px 26px 60px}
+
+  .hint{font-size:13px;color:var(--dim);background:#eef6ff;border:1px solid #cfe4ff;border-radius:10px;
+    padding:10px 14px;margin-bottom:18px}
+  .hint b{color:var(--blue-d)}
+
+  /* 醒目：确认本次质检员 */
+  .confirm{border:2px solid var(--blue);box-shadow:0 12px 34px rgba(11,92,255,.16);margin-bottom:20px}
+  .confirm>h2{background:linear-gradient(180deg,#eef5ff,#ffffff);font-size:15px}
+  .order-tip{font-size:13px;background:#eef6ff;border:1px solid #cfe4ff;border-radius:10px;padding:9px 13px;color:var(--txt);margin-bottom:14px}
+  .order-tip b{color:var(--blue-d)}
+  .cur-line{font-size:14px;color:var(--dim);margin-bottom:14px}
+  .cur-line .cur-op{font-size:20px;font-weight:900;color:var(--pcb);margin-left:4px}
+  .cur-line.ok .cur-op{color:var(--dram)}
+  .use-login{width:100%;font:inherit;font-size:16px;font-weight:800;color:#fff;border:none;border-radius:12px;
+    padding:14px;cursor:pointer;background:linear-gradient(135deg,#0b5cff,#3f86ff);box-shadow:0 10px 24px rgba(11,92,255,.28);transition:.15s}
+  .use-login:hover{transform:translateY(-2px)}
+  .use-login b{font-weight:800}
+  .or{display:flex;align-items:center;gap:12px;color:var(--faint);font-size:12px;margin:16px 0}
+  .or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
+  .pick{display:flex;flex-wrap:wrap;gap:9px;margin-bottom:6px}
+  .pick .chip{font:inherit;font-size:14px;font-weight:700;border:1px solid var(--line2);background:#fff;color:var(--txt);
+    border-radius:999px;padding:9px 18px;cursor:pointer;transition:.15s}
+  .pick .chip:hover{border-color:var(--blue);color:var(--blue)}
+  .pick .chip.sel{background:var(--dram);border-color:var(--dram);color:#fff}
+  .pick .pk-empty{color:var(--faint);font-size:13px}
+  .go{width:100%;margin-top:18px;font:inherit;font-size:16px;font-weight:800;color:#fff;border:none;border-radius:12px;
+    padding:14px;cursor:pointer;background:var(--dram);box-shadow:0 10px 24px rgba(18,183,106,.28);transition:.15s}
+  .go:hover:not(:disabled){transform:translateY(-2px)}
+  .go:disabled{background:#c7d2df;box-shadow:none;cursor:not-allowed}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:var(--shadow)}
+  .card>h2{font-size:14px;margin:0;padding:14px 18px;border-bottom:1px solid var(--line);
+    font-weight:700;display:flex;align-items:center;gap:10px;color:var(--txt);
+    background:linear-gradient(180deg,#f6faff,#ffffff)}
+  .card>h2 .right{margin-left:auto;font-weight:400;font-size:12px;color:var(--dim)}
+  .card .body{padding:16px 18px}
+
+  .addrow{display:flex;gap:8px;margin-bottom:16px}
+  .addrow input{flex:1;background:#fff;border:1px solid var(--line2);color:var(--txt);border-radius:9px;
+    padding:9px 12px;font-size:14px;outline:none}
+  .addrow input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(11,92,255,.12)}
+  .btn{border:0;border-radius:9px;padding:9px 18px;cursor:pointer;font-size:14px;font-weight:700;
+    background:var(--blue);color:#fff;transition:.15s}
+  .btn:hover{filter:brightness(1.06)}
+
+  ul.oplist{list-style:none;margin:0;padding:0}
+  ul.oplist li{display:flex;align-items:center;gap:12px;padding:11px 12px;border:1px solid var(--line);
+    border-radius:10px;margin-bottom:8px;background:var(--panel2)}
+  ul.oplist li .nm{flex:1;font-size:15px;font-weight:600}
+  ul.oplist li .del{border:1px solid var(--line2);background:#fff;color:var(--pcb);border-radius:8px;
+    padding:6px 12px;cursor:pointer;font-size:12px;transition:.15s}
+  ul.oplist li .del:hover{background:var(--pcb);color:#fff;border-color:var(--pcb)}
+  .empty{color:var(--faint);text-align:center;padding:26px 10px;font-size:14px}
+
+  .toast{position:fixed;right:24px;bottom:24px;z-index:80;background:var(--txt);color:#fff;
+    padding:12px 18px;border-radius:10px;font-size:13px;box-shadow:var(--shadow);opacity:0;
+    transform:translateY(10px);transition:.25s;pointer-events:none}
+  .toast.show{opacity:1;transform:translateY(0)}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <img class="logo" src="/logo.png" alt="云小圈" />
+  <div class="brand"><div class="sysname">云小圈AI硬件质检系统</div><div class="title">质检员管理</div></div>
+  <span class="tb-sp"></span>
+  <a class="navbtn" href="/workbench">← 返回工作台</a>
+  <a class="navbtn" href="/">🏠 首页</a>
+</div>
+
+<div class="wrap">
+  <div class="card confirm">
+    <h2>✅ 确认本次质检员 <span class="right">记录将署此人的名字</span></h2>
+    <div class="body">
+      <div class="order-tip" id="order-tip">未选订单 —— 请先到第 ① 步选一张采购订单。</div>
+      <div class="cur-line" id="cur-line">本次质检员：<span class="cur-op" id="cur-op">未确认</span></div>
+      <button class="use-login" id="use-login">✓ 就是我 <b id="login-name"></b></button>
+      <div class="or">或 从名单选择</div>
+      <div class="pick" id="pick"><span class="pk-empty">加载中…</span></div>
+      <button class="go" id="go" disabled>确认并进入工作台开检 →</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>👤 质检员名单管理 <span class="right" id="op-count"></span></h2>
+    <div class="body">
+      <div class="addrow">
+        <input id="op-name" type="text" placeholder="新增质检员姓名，回车或点新增" maxlength="32">
+        <button class="btn" id="op-add">＋ 新增</button>
+      </div>
+      <ul class="oplist" id="op-list"><li class="empty">加载中…</li></ul>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $=id=>document.getElementById(id);
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2200);}
+
+/* ===== 确认本次质检员 ===== */
+let _picked=(localStorage.getItem('operator')||'').trim();   // 本次选中的质检员
+function renderConfirm(list){
+  // 订单提示
+  const bn=(localStorage.getItem('batch_no')||'').trim();
+  const bid=(localStorage.getItem('batch_id')||'').trim();
+  const tip=$('order-tip');
+  if(bid){tip.innerHTML='本批订单：<b>'+esc(bn||('#'+bid))+'</b>，确认质检员后进入工作台开检。';}
+  else{tip.innerHTML='未选订单 —— 请先到第 ① 步<a href="/orders">选一张采购订单</a>。';}
+  // 当前选中
+  const cl=$('cur-line');
+  if(_picked){cl.classList.add('ok');$('cur-op').textContent=_picked;}
+  else{cl.classList.remove('ok');$('cur-op').textContent='未确认';}
+  // 名单 chips
+  const pk=$('pick');
+  if(!list.length){pk.innerHTML='<span class="pk-empty">名单为空，可用上方「就是我」，或在下方新增</span>';}
+  else{pk.innerHTML=list.map(n=>'<button class="chip'+(n===_picked?' sel':'')+'" data-n="'+esc(n)+'">'+esc(n)+'</button>').join('');}
+  // 开检按钮：选了人且选了单才可点
+  $('go').disabled=!(_picked&&bid);
+}
+$('pick').onclick=e=>{const c=e.target.closest('.chip');if(!c)return;
+  _picked=c.dataset.n;localStorage.setItem('operator',_picked);load();toast('已选质检员：'+_picked);};
+$('go').onclick=()=>{
+  if(!_picked){toast('请先确认质检员');return;}
+  if(!(localStorage.getItem('batch_id')||'').trim()){toast('请先选订单');location.href='/orders';return;}
+  location.href='/workbench';
+};
+
+async function load(){
+  const box=$('op-list');
+  let d;try{d=await(await fetch('/api/operators')).json();}catch(e){box.innerHTML='<li class="empty">加载失败</li>';renderConfirm([]);return;}
+  const list=d.operators||[];
+  $('op-count').textContent='共 '+list.length+' 人';
+  if(!list.length){box.innerHTML='<li class="empty">还没有质检员，先在上面新增。</li>';}
+  else{box.innerHTML=list.map(n=>'<li><span class="nm">'+esc(n)+'</span>'
+    +'<button class="del" onclick="delOp(\''+esc(n).replace(/'/g,"\\'")+'\')">删除</button></li>').join('');}
+  renderConfirm(list);
+}
+/* 一键用登录账号 */
+(async()=>{try{const me=await(await fetch('/api/me')).json();
+  if(me&&me.username){$('login-name').textContent='（'+me.username+'）';$('use-login').dataset.name=me.username;}
+  else{$('use-login').style.display='none';}
+}catch(e){$('use-login').style.display='none';}})();
+$('use-login').onclick=()=>{const n=$('use-login').dataset.name;if(!n)return;
+  _picked=n;localStorage.setItem('operator',n);load();toast('已确认质检员：'+n);};
+async function addOp(){
+  const name=$('op-name').value.trim();
+  if(!name){toast('请输入姓名');return;}
+  const fd=new FormData();fd.append('name',name);
+  try{
+    const d=await(await fetch('/api/operators',{method:'POST',body:fd})).json();
+    if(!d.ok)throw new Error(d.error||'新增失败');
+    $('op-name').value='';toast('已新增质检员');load();
+  }catch(e){alert('新增失败：'+e.message);}
+}
+async function delOp(name){
+  if(!confirm('删除质检员「'+name+'」？已入库记录的署名不受影响。'))return;
+  try{
+    await fetch('/api/operators/'+encodeURIComponent(name),{method:'DELETE'});
+    toast('已删除');load();
+  }catch(e){alert('删除出错：'+e.message);}
+}
+$('op-add').onclick=addOp;
+$('op-name').addEventListener('keydown',e=>{if(e.key==='Enter')addOp();});
+load();
+</script>
+</body>
+</html>

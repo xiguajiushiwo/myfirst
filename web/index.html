@@ -1,0 +1,1425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>云小圈AI硬件质检系统</title>
+<link rel="icon" type="image/png" href="/favicon.png" />
+<style>
+  /* ===== 与登录/首页统一：暖橙+蓝渐变背景 + 半透明玻璃卡 ===== */
+  :root{
+    --bg:#eef4fb; --panel:#ffffff; --panel2:#f5f8ff; --panel3:#eaf2ff;
+    --line:rgba(20,40,80,.10); --line2:rgba(20,40,80,.18);
+    --txt:#1d2330; --dim:#6b7280; --faint:#9aa4b2;
+    --blue:#0a5cd5; --blue-d:#083f93; --orange:#fc8615;
+    --pcb:#d93025; --controller:#f79009; --dram:#0f9d58; --unknown:#98a2b3;
+    --shadow:0 12px 30px rgba(30,60,120,.12);
+    --shadow-sm:0 2px 10px -4px rgba(16,42,90,.14);
+    --radius:20px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;color:var(--txt);line-height:1.55;position:relative;overflow-x:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    background:
+      radial-gradient(1100px 700px at 12% 8%, rgba(252,134,21,.16), transparent 55%),
+      radial-gradient(1200px 800px at 92% 90%, rgba(10,92,213,.18), transparent 58%),
+      linear-gradient(135deg,#eef1fb 0%,#e8eefc 40%,#f3ecfb 100%);
+    background-attachment:fixed;min-height:100vh}
+
+  /* 顶栏：半透明玻璃（透出背景渐变，与首页一致） */
+  .topbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:14px;
+    padding:14px 26px;border-bottom:1px solid rgba(255,255,255,.9);
+    background:rgba(255,255,255,.66);backdrop-filter:saturate(180%) blur(20px);
+    box-shadow:0 6px 24px rgba(30,60,120,.06)}
+  .topbar .logo{height:38px;width:38px;border-radius:9px;object-fit:contain}
+  .topbar .brand{line-height:1.2}
+  .topbar .brand .sysname{font-size:12px;color:var(--dim)}
+  .topbar .brand .title{font-size:19px;font-weight:800;color:var(--txt);letter-spacing:.3px}
+  .topbar .tb-sp{flex:1}
+  .pill{display:inline-flex;align-items:center;gap:7px;padding:6px 14px;border-radius:999px;
+    font-size:12.5px;font-weight:700;background:#e7f8ef;color:var(--dram);border:1px solid rgba(15,157,88,.2)}
+  .pill.live::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--dram);
+    box-shadow:0 0 0 3px rgba(18,183,106,.18);animation:blink 1.6s ease-in-out infinite}
+  .menu{position:relative}
+  .menu>.menu-btn{background:#fff;border:1px solid var(--line2);
+    font:inherit;font-weight:700;font-size:13px;color:var(--blue-d);cursor:pointer;padding:8px 14px;border-radius:9px;transition:.15s}
+  .menu>.menu-btn:hover{background:var(--panel3);border-color:var(--blue)}
+  .menu-panel{position:absolute;right:0;top:calc(100% + 8px);background:#fff;border:1px solid var(--line);
+    border-radius:12px;box-shadow:var(--shadow);min-width:170px;padding:6px;display:none;z-index:40}
+  .menu.open .menu-panel{display:block}
+  .menu-panel a{display:block;padding:9px 14px;border-radius:8px;color:var(--txt);font-size:14px;text-decoration:none}
+  .menu-panel a:hover{background:var(--panel3);color:var(--blue-d)}
+  .navbtn{border:1px solid var(--line2);background:#fff;color:var(--blue);
+    font-weight:700;font-size:13px;border-radius:999px;padding:8px 16px;cursor:pointer;
+    display:inline-flex;align-items:center;gap:6px;transition:.15s}
+  .navbtn:hover{background:var(--blue);color:#fff;border-color:var(--blue)}
+  @keyframes blink{50%{opacity:.4}}
+
+  /* 布局：居中容器 + 分区标题 + 网格 */
+  .wrap{max-width:1400px;margin:0 auto;padding:20px 26px 60px;display:flex;flex-direction:column;gap:16px}
+  .sec-h{display:flex;align-items:center;gap:10px;margin:8px 2px 0}
+  .sec-h::before{content:"";width:4px;height:16px;border-radius:2px;background:var(--blue)}
+  .sec-h h2{font-size:16px;font-weight:800;margin:0;letter-spacing:.3px}
+  .sec-h .sub{font-size:12.5px;color:var(--dim)}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;align-items:start}
+  @media(max-width:1000px){.grid{grid-template-columns:1fr}}
+
+  /* 半透明玻璃卡（与首页 .tile 一致） */
+  .card{background:rgba(255,255,255,.72);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.9);
+    border-radius:var(--radius);overflow:hidden;box-shadow:0 12px 34px rgba(30,60,120,.09);
+    transition:box-shadow .2s,border-color .2s}
+  .card:hover{box-shadow:0 18px 44px rgba(30,60,120,.14);border-color:rgba(10,92,213,.22)}
+  .card>h2{font-size:14px;margin:0;padding:14px 18px;border-bottom:1px solid var(--line);
+    font-weight:800;letter-spacing:.2px;display:flex;align-items:center;gap:10px;color:var(--txt);
+    position:relative;background:linear-gradient(180deg,rgba(246,250,255,.6),rgba(255,255,255,0))}
+  .card>h2::after{content:"";position:absolute;left:18px;right:18px;bottom:-1px;height:2px;border-radius:2px;
+    background:linear-gradient(90deg,var(--blue),#7db0ff 42%,transparent)}
+  .card>h2 .ix{width:24px;height:24px;border-radius:8px;flex:none;font-size:12px;font-weight:800;
+    display:grid;place-items:center;color:#fff;background:linear-gradient(135deg,var(--blue),#3f86ff)}
+  .card>h2 small{font-weight:400;color:var(--dim);font-size:12px}
+  .card>h2 .right{margin-left:auto;font-weight:400}
+  .card .body{padding:16px 18px}
+
+  /* 订单条：紧凑单行（省地方，信息不减） */
+  .order-card{padding:0}
+  .order-card .body{padding:0}
+  .order-card #batch-current{margin:0;background:transparent;padding:0}
+  .ord{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:9px 16px}
+  .ord-main{flex:1;min-width:220px;display:flex;align-items:center;gap:10px}
+  .ord-ic{width:30px;height:30px;flex:none;border-radius:9px;display:grid;place-items:center;color:#fff;
+    background:linear-gradient(135deg,var(--orange),#ff9f45);box-shadow:0 4px 10px -4px rgba(252,134,21,.6)}
+  .ord-ic svg{width:17px;height:17px;stroke:currentColor;stroke-width:1.9;fill:none;stroke-linecap:round;stroke-linejoin:round}
+  .ord-txt{flex:1;min-width:0;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .ord-no{font-size:15px;font-weight:800;letter-spacing:-.2px;line-height:1.2;color:var(--txt);white-space:nowrap}
+  .ord-no .cust{font-size:12px;font-weight:600;color:var(--dim);margin-left:6px}
+  .ord-chips{display:flex;flex-wrap:wrap;gap:5px}
+  .ord-chips .chip{font-size:11px;font-weight:600;color:var(--blue-d);background:var(--panel3);
+    border:1px solid rgba(10,92,213,.16);border-radius:999px;padding:2px 9px}
+  .ord-chips .chip.soft{color:var(--dim);background:var(--panel2);border-color:var(--line)}
+  /* 进度：同行右侧，横向紧凑 */
+  .ord-prog{flex:none;display:flex;align-items:center;gap:10px}
+  @media(max-width:820px){.ord-prog{width:100%;flex-wrap:wrap}}
+  .ord-prog .pg-top{display:flex;align-items:baseline;gap:6px;white-space:nowrap}
+  .ord-prog .pg-num{font-size:12.5px;font-weight:700;color:var(--txt)}
+  .ord-prog .pg-num b{font-size:16px;font-weight:900;color:var(--blue);font-variant-numeric:tabular-nums}
+  .ord-prog .pg-remain{font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:999px}
+  .ord-prog .pg-remain.go{color:#0f9d58;background:rgba(18,183,106,.12)}
+  .ord-prog .pg-remain.done{color:var(--orange);background:rgba(252,134,21,.14)}
+  .ord-prog .pg-bar{width:120px;height:8px;border-radius:999px;background:#e3ebf6;overflow:hidden;position:relative}
+  .ord-prog .pg-bar i{display:block;height:100%;border-radius:999px;
+    background:linear-gradient(90deg,var(--blue),#3f86ff);transition:width .5s ease}
+  .ord-prog .pg-foot{display:flex;gap:10px;font-size:11.5px;color:var(--dim);white-space:nowrap}
+  .ord-prog .pg-foot b{font-variant-numeric:tabular-nums}
+  .ord-prog .pg-foot .ok b{color:#0f9d58}
+  .ord-prog .pg-foot .ng b{color:var(--pcb)}
+  .ord-switch{flex:none;border:1px solid rgba(10,92,213,.3);
+    background:#fff;color:var(--blue);font-weight:700;font-size:12px;padding:5px 12px;border-radius:999px;
+    text-decoration:none;transition:.15s;white-space:nowrap}
+  .ord-switch:hover{background:var(--blue);color:#fff;border-color:var(--blue)}
+  /* 未选单时的空态 */
+  .ord-empty{padding:10px 16px;font-size:13px;font-weight:600;color:var(--pcb);display:flex;
+    align-items:center;gap:10px;flex-wrap:wrap}
+  .ord-empty a{color:var(--blue);font-weight:700;text-decoration:none}
+
+  /* 槽位指示灯（绿=合格 红=不合格 灰=空槽/未检） */
+  .slot-lamps{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:12px 0 8px}
+  .lamp{display:flex;align-items:center;justify-content:center;padding:16px;border-radius:14px;
+    border:1px solid var(--line);background:linear-gradient(180deg,#fff,var(--panel2));
+    box-shadow:var(--shadow-sm);transition:.2s}
+  .lamp .led{width:22px;height:22px;flex:none;border-radius:50%;
+    background:radial-gradient(circle at 34% 30%,#eef1f6,var(--unknown));
+    box-shadow:0 0 0 4px rgba(152,162,179,.14);transition:.2s}
+  .lamp.pass{border-color:#bfe5d0;background:linear-gradient(180deg,#fff,rgba(18,183,106,.08))}
+  .lamp.pass .led{background:radial-gradient(circle at 34% 30%,#8ff2bd,var(--dram));
+    box-shadow:0 0 0 4px rgba(18,183,106,.20),0 0 14px rgba(18,183,106,.6)}
+  .lamp.fail{border-color:#f0c2bd;background:linear-gradient(180deg,#fff,rgba(217,48,37,.07))}
+  .lamp.fail .led{background:radial-gradient(circle at 34% 30%,#ffa8a8,var(--pcb));
+    box-shadow:0 0 0 4px rgba(217,48,37,.18),0 0 14px rgba(217,48,37,.55)}
+  .lamp.empty{opacity:.72}
+  @media(max-width:600px){.slot-lamps{grid-template-columns:repeat(2,1fr)}}
+
+  select,input[type=number],input[type=text]{background:#fff;border:1px solid var(--line2);
+    color:var(--txt);border-radius:9px;padding:8px 11px;font-size:13px;outline:none;transition:.15s}
+  select{cursor:pointer}
+  select:hover,select:focus,input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.14)}
+
+  .info{display:flex;flex-direction:column;gap:9px;margin-top:4px}
+  .info label{font-size:12px;color:var(--dim);font-weight:600;display:flex;flex-direction:column;gap:3px}
+  .info input{width:100%;font-size:13px}
+  .info input#sn{font-family:ui-monospace,Consolas,monospace}
+
+  button.go{width:100%;padding:12px;border:0;border-radius:11px;cursor:pointer;
+    background:linear-gradient(135deg,var(--blue),#2f6bff);color:#fff;font-size:14px;font-weight:700;
+    letter-spacing:.5px;transition:.18s;box-shadow:0 12px 26px -12px rgba(11,92,255,.8)}
+  button.go:hover{filter:brightness(1.05);transform:translateY(-1px)}
+  button.go:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
+  button.save{background:linear-gradient(135deg,var(--orange),#ff7a1a);
+    box-shadow:0 12px 26px -12px rgba(255,138,0,.7);margin-top:12px}
+  button.save:hover{filter:brightness(1.03)}
+  .btn-sm{background:#fff;border:1px solid var(--line2);color:var(--dim);
+    border-radius:8px;padding:7px 13px;cursor:pointer;font-size:12px;font-weight:600;transition:.15s}
+  .btn-sm:hover{border-color:var(--blue);color:var(--blue);background:var(--panel3)}
+  .fldrow{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+  .fldrow select{flex:1;min-width:0}
+
+  /* ===== 相机取景台（整宽主视觉） ===== */
+  .stage>h2{font-size:15px}
+  .cam-toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+  .cam-wrap{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:14px}
+  @media(max-width:820px){.cam-wrap{grid-template-columns:1fr}}
+  .cam-frame{position:relative;border-radius:14px;overflow:hidden;min-height:360px;
+    background:linear-gradient(140deg,#101f38 0%,#0b1830 55%,#080f22 100%);
+    box-shadow:inset 0 0 0 1px rgba(120,170,255,.10),inset 0 12px 44px rgba(0,0,0,.4)}
+  .cam-frame::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.45;z-index:1;
+    background-image:linear-gradient(rgba(120,170,255,.10) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(120,170,255,.10) 1px,transparent 1px);
+    background-size:28px 28px;mask:radial-gradient(130% 130% at 50% 40%,#000 52%,transparent)}
+  .cam-frame img{position:relative;z-index:2;width:100%;height:100%;min-height:360px;
+    display:block;object-fit:contain;background:transparent}
+  .cam-frame img:not([src]),.cam-frame img[src=""]{opacity:0}
+  /* 全屏：撑满整屏、画面按比例居中不裁切 */
+  .cam-frame:fullscreen{width:100vw;height:100vh;border-radius:0;min-height:0}
+  .cam-frame:fullscreen img{width:100%;height:100%;min-height:0;object-fit:contain}
+  .cam-frame:-webkit-full-screen{width:100vw;height:100vh;border-radius:0}
+  .cam-frame:-webkit-full-screen img{width:100%;height:100%;object-fit:contain}
+  .cam-frame .corner{position:absolute;width:26px;height:26px;z-index:3;pointer-events:none;
+    border:2px solid rgba(120,180,255,.6)}
+  .cam-frame .corner.tl{top:14px;left:14px;border-right:0;border-bottom:0;border-radius:6px 0 0 0}
+  .cam-frame .corner.tr{top:14px;right:14px;border-left:0;border-bottom:0;border-radius:0 6px 0 0}
+  .cam-frame .corner.bl{bottom:14px;left:14px;border-right:0;border-top:0;border-radius:0 0 0 6px}
+  .cam-frame .corner.br{bottom:14px;right:14px;border-left:0;border-top:0;border-radius:0 0 6px 0}
+  .cam-frame .cam-tag{position:absolute;z-index:4;top:14px;left:50%;transform:translateX(-50%);
+    display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:#dce9ff;
+    background:rgba(8,16,34,.66);border:1px solid rgba(120,170,255,.28);backdrop-filter:blur(6px);
+    padding:6px 15px;border-radius:999px;white-space:nowrap}
+  .cam-frame .cam-tag .sn{color:#8fb2e8;font-weight:600}
+  .cam-frame .cam-tag .live{width:7px;height:7px;border-radius:50%;background:#22c55e;
+    box-shadow:0 0 0 3px rgba(34,197,94,.28);animation:blink 1.6s ease-in-out infinite}
+  .cam-frame .cam-ph{position:absolute;inset:0;z-index:1;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:10px;color:#7d97c4;text-align:center;padding:20px}
+  .cam-frame .cam-ph svg{width:52px;height:52px;stroke:currentColor;stroke-width:1.5;fill:none;
+    stroke-linecap:round;stroke-linejoin:round;opacity:.65}
+  .cam-frame .cam-ph .t{font-size:14px;font-weight:600}
+  .cam-frame .cam-ph .s{font-size:11.5px;color:#5f76a3}
+  /* 取景内缩放工具 + 可拖动图像 */
+  .cam-frame img{cursor:grab;user-select:none;transform-origin:center center;will-change:transform;touch-action:none}
+  .cam-frame img.dragging{cursor:grabbing}
+  .cam-frame .zoom-tools{position:absolute;right:12px;bottom:12px;z-index:5;display:flex;align-items:center;gap:6px;
+    padding:5px 8px;border:1px solid rgba(255,255,255,.2);background:rgba(13,20,29,.82);backdrop-filter:blur(8px);
+    color:#dbe7f5;border-radius:11px;font-size:12px}
+  .cam-frame .zoom-btn{border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:#fff;
+    border-radius:7px;padding:3px 9px;font-weight:800;cursor:pointer;line-height:1.2}
+  .cam-frame .zoom-btn:hover{background:rgba(255,255,255,.18)}
+  .cam-frame .zoom-val{min-width:44px;text-align:right;font-family:ui-monospace,Consolas,monospace}
+
+  /* 相机参数（曝光/增益/翻转）折叠块 */
+  details.tune{margin:12px 0 4px;border:1px solid var(--line);border-radius:12px;background:var(--panel2)}
+  details.tune>summary{cursor:pointer;padding:11px 14px;font-size:13px;font-weight:700;color:var(--blue-d);
+    list-style:none;user-select:none}
+  details.tune>summary::-webkit-details-marker{display:none}
+  details.tune>summary::before{content:"▸ ";color:var(--faint)}
+  details.tune[open]>summary::before{content:"▾ "}
+  .tune-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 14px 14px}
+  @media(max-width:820px){.tune-grid{grid-template-columns:1fr}}
+  .tune-box{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:#fff}
+  .tune-title{font-weight:800;margin-bottom:8px;font-size:13px}
+  .tune-row{display:grid;grid-template-columns:56px 1fr 40px;gap:8px;align-items:center;margin-top:8px}
+  .tune-row label{font-size:12px;color:var(--dim)}
+  .tune-row span{font-size:12px;color:var(--faint)}
+  .tune .tiny{font-size:11px;color:var(--faint);margin-top:9px}
+
+
+  /* ===== 仪式感「开始质检」====== */
+  .qc-hero{display:flex;flex-direction:column;align-items:center;gap:14px;padding:22px 16px 6px}
+  .qc-start{position:relative;border:0;cursor:pointer;color:#fff;font-weight:900;letter-spacing:4px;
+    font-size:22px;padding:22px 64px;border-radius:999px;
+    background:linear-gradient(135deg,#12b76a,#0f9d58 60%,#0a7f47);
+    box-shadow:0 18px 44px -12px rgba(18,183,106,.7),inset 0 1px 0 rgba(255,255,255,.35);
+    transition:transform .15s,box-shadow .2s,filter .2s}
+  .qc-start::before{content:"";position:absolute;inset:0;border-radius:999px;padding:2px;
+    background:linear-gradient(135deg,rgba(255,255,255,.7),transparent 40%);
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none}
+  .qc-start:hover{transform:translateY(-2px);filter:brightness(1.05);
+    box-shadow:0 24px 54px -12px rgba(18,183,106,.8)}
+  .qc-start:active{transform:translateY(0)}
+  .qc-start .rk{display:block;font-size:12px;font-weight:700;letter-spacing:6px;opacity:.85;margin-top:4px}
+  .qc-start.running{background:linear-gradient(135deg,#0b5cff,#3f86ff);
+    box-shadow:0 18px 44px -12px rgba(11,92,255,.7),inset 0 1px 0 rgba(255,255,255,.35)}
+  .qc-start.running::after{content:"";position:absolute;right:26px;top:50%;transform:translateY(-50%);
+    width:11px;height:11px;border-radius:50%;background:#fff;
+    box-shadow:0 0 0 4px rgba(255,255,255,.35);animation:blink 1.4s ease-in-out infinite}
+  .qc-stop{border:1px solid var(--line2);background:#fff;color:var(--pcb);cursor:pointer;
+    font-weight:800;font-size:14px;padding:11px 26px;border-radius:999px;transition:.15s}
+  .qc-stop:hover{background:#fff5f5;border-color:var(--pcb)}
+  .qc-hint{font-size:12.5px;color:var(--dim)}
+  /* ===== 静止即拍 实时诊断面板 ===== */
+  #hik-auto-flow{margin:14px 0 8px;padding:12px 14px;border:1px solid var(--line);
+    border-radius:12px;background:var(--panel2);font-size:13px}
+  .af-head{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .af-head>b{color:var(--blue-d);margin-right:2px}
+  .af-ar{color:#cbd5e1}
+  .af-step{padding:3px 10px;border-radius:999px;background:#eef2f7;color:var(--faint);
+    font-size:12px;transition:.2s}
+  #af-count{font-weight:800;color:var(--dram)}
+  /* 为什么没触发：正常=灰底提示，阈值配错=橙底告警 */
+  #af-why{margin-top:9px;padding:8px 11px;border-radius:9px;font-size:12.5px;line-height:1.6;
+    background:#eef2f7;color:var(--dim);border:1px solid var(--line)}
+  #af-why.warn{background:#fff7e6;border-color:#f4d58a;color:#b9770a;font-weight:600}
+  .af-meter{display:flex;align-items:center;gap:9px;margin-top:10px}
+  .af-lb{color:var(--dim);white-space:nowrap;font-size:12px}
+  .af-bar-wrap{flex:1;height:12px;border-radius:6px;background:#e6eef7;position:relative;overflow:hidden}
+  #af-bar{height:100%;width:0%;background:var(--dram);border-radius:6px;transition:width .2s,background .2s}
+  .af-tick{position:absolute;top:-2px;bottom:-2px;width:2px;background:#12b76a;opacity:.85}
+  .af-tick.mo{background:var(--pcb)}
+  #af-diff{color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap;font-size:12px;min-width:96px;text-align:right}
+  /* 链路实时进度：五步走灯 */
+  #pipe-flow{margin-top:10px;padding:11px 12px;border:1px solid #cfe4ff;border-radius:10px;background:#f7fbff}
+  .pf-steps{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .pf-step{display:flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;
+    background:#fff;border:1px solid var(--line);font-size:12px;color:var(--faint);transition:.25s}
+  .pf-step i{width:17px;height:17px;border-radius:50%;display:grid;place-items:center;
+    font-size:10px;font-weight:800;font-style:normal;background:#e6eef7;color:var(--faint);transition:.25s}
+  .pf-step+.pf-step{position:relative;margin-left:10px}
+  .pf-step+.pf-step::before{content:"";position:absolute;left:-13px;width:9px;height:2px;
+    border-radius:2px;background:#d5e3f5}
+  /* 已完成的步骤=绿；当前步=蓝且呼吸 */
+  .pf-step.ok{color:#0f9d58;border-color:#bfe5d0;background:rgba(18,183,106,.07)}
+  .pf-step.ok i{background:var(--dram);color:#fff}
+  .pf-step.cur{color:#fff;border-color:var(--blue);background:var(--blue);font-weight:700;
+    box-shadow:0 4px 14px -4px rgba(10,92,213,.6);animation:pfpulse 1.2s ease-in-out infinite}
+  .pf-step.cur i{background:rgba(255,255,255,.9);color:var(--blue)}
+  @keyframes pfpulse{50%{box-shadow:0 4px 20px -2px rgba(10,92,213,.85)}}
+  .pf-text{margin-top:9px;font-size:12.5px;color:var(--blue-d);font-weight:600;
+    display:flex;align-items:center;gap:7px}
+  .pf-text .el{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--dim);font-weight:700}
+  .af-legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:9px;font-size:11.5px;color:var(--faint)}
+  .af-legend b{color:var(--txt);font-variant-numeric:tabular-nums;font-weight:700}
+  .main-actions{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+  .main-actions button{border:none;border-radius:11px;cursor:pointer;font-weight:800;transition:.15s;
+    display:inline-flex;align-items:center;gap:6px}
+  .main-actions button:hover{filter:brightness(1.05)}
+  .act-primary{flex:1;min-width:260px;font-size:16px;padding:16px 24px;color:#fff;
+    background:linear-gradient(135deg,#12b76a,#25d083);box-shadow:0 10px 26px rgba(18,183,106,.32)}
+  .act-auto{font-size:14px;padding:16px 20px}
+  .act-auto.on{color:#fff;background:linear-gradient(135deg,#0b5cff,#3f86ff);box-shadow:0 8px 20px rgba(11,92,255,.28)}
+  .act-auto.off{color:var(--pcb);background:#fff;border:1px solid var(--line2)!important;box-shadow:none}
+  .act-auto.off:hover{border-color:var(--pcb)!important;background:#fff5f5}
+  .manual-steps{border:1px solid var(--line);border-radius:10px;background:var(--panel2);margin-bottom:8px}
+  .manual-steps>summary{cursor:pointer;padding:10px 14px;font-size:13px;font-weight:700;color:var(--dim);
+    list-style:none;user-select:none}
+  .manual-steps>summary::-webkit-details-marker{display:none}
+  .manual-steps>summary::before{content:"▸ ";color:var(--faint)}
+  .manual-steps[open]>summary::before{content:"▾ "}
+  .manual-steps .ms-row{display:flex;gap:8px;flex-wrap:wrap;padding:0 14px 12px}
+
+  /* 综合判定灯 */
+  .signal{display:flex;align-items:center;gap:16px;padding:16px;border-radius:12px;
+    border:1px solid var(--line);background:var(--panel2)}
+  .signal.pass{background:linear-gradient(100deg,rgba(18,183,106,.12),rgba(18,183,106,.03));border-color:rgba(18,183,106,.45)}
+  .signal.fail{background:linear-gradient(100deg,rgba(229,72,77,.12),rgba(229,72,77,.03));border-color:rgba(229,72,77,.45)}
+  .signal.unknown{background:var(--panel2)}
+  .signal .lamp{width:58px;height:58px;border-radius:50%;flex:none;background:#cfd8e6;box-shadow:inset 0 0 10px #0002}
+  .signal.pass .lamp{background:radial-gradient(circle at 34% 30%,#8ff2bd,#0f9d58);box-shadow:0 0 24px 5px rgba(18,183,106,.55)}
+  .signal.fail .lamp{background:radial-gradient(circle at 34% 30%,#ffa8a8,#d92d2d);box-shadow:0 0 24px 5px rgba(229,72,77,.55);animation:pulse 1.3s ease-in-out infinite}
+  @keyframes pulse{50%{box-shadow:0 0 32px 9px rgba(229,72,77,.35)}}
+  .signal .big{font-size:23px;font-weight:800;letter-spacing:.4px}
+  .signal.pass .big{color:#0f9d58}
+  .signal.fail .big{color:#d92d2d}
+  .signal .desc{font-size:12px;color:var(--dim);margin-top:3px}
+  .problems{margin:12px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:7px}
+  .problems li{font-size:12px;padding:9px 12px;border-radius:9px;
+    background:rgba(229,72,77,.07);border:1px solid rgba(229,72,77,.25);color:#a13034}
+  .problems li b{color:#d92d2d}
+  .okline{font-size:12px;color:#0f9d58;margin-top:10px;display:flex;align-items:flex-start;gap:7px}
+
+  .times{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}
+  .timechip{background:var(--panel2);border:1px solid var(--line);border-radius:9px;
+    padding:6px 11px;font-size:12px;color:var(--dim)}
+  .timechip b{color:var(--txt);font-variant-numeric:tabular-nums}
+  .results{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:900px){.results{grid-template-columns:1fr}}
+  .resimg{background:var(--panel2);border:1px solid var(--line);border-radius:12px;overflow:hidden;min-width:0}
+  .resimg .cap{font-size:13px;padding:10px 14px;border-bottom:1px solid var(--line);color:var(--txt);font-weight:700}
+  .resimg img{width:100%;display:block;background:#fff}
+
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+  tr:last-child td{border-bottom:0}
+  th{color:var(--dim);font-weight:700;font-size:12px}
+  tbody tr:hover{background:var(--panel2)}
+  .tag{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;color:#fff}
+  .conf{font-variant-numeric:tabular-nums;color:var(--dim)}
+  .mono{font-family:ui-monospace,Consolas,monospace}
+  .empty{color:var(--faint);text-align:center;padding:34px 10px;font-size:13px}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-bottom:12px;color:var(--dim)}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .dot{width:11px;height:11px;border-radius:4px;display:inline-block}
+  details{margin-top:8px}
+  summary{cursor:pointer;color:var(--blue);font-size:13px;user-select:none;font-weight:600}
+  summary:hover{filter:brightness(1.1)}
+  .note{color:#b45a00;font-size:11px;margin-top:2px}
+  .hint{font-size:12px;color:var(--dim);margin:0 0 12px;line-height:1.7}
+  code{background:var(--panel3);padding:1px 6px;border-radius:5px;font-size:12px;color:var(--blue-d)}
+
+  .spin{display:inline-block;width:15px;height:15px;border:2px solid #cdd9ec;border-top-color:var(--blue);
+    border-radius:50%;animation:sp .7s linear infinite;vertical-align:-3px;margin-right:7px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .badge{display:inline-block;padding:2px 9px;border-radius:11px;font-size:11px;font-weight:700}
+  .badge.unclear{background:rgba(247,144,9,.16);color:#b45a00}
+  .badge.unknown{background:rgba(148,160,179,.2);color:#5b6b82}
+  .badge.ok{background:rgba(18,183,106,.15);color:#0f9d58}
+  .badge.no{background:rgba(229,72,77,.13);color:#d92d2d}
+
+  .modal{position:fixed;inset:0;z-index:60;background:rgba(16,30,60,.42);backdrop-filter:blur(3px);
+    display:none;align-items:flex-start;justify-content:center;padding:40px 20px}
+  .modal.show{display:flex}
+  .modal-box{background:var(--panel);border-radius:14px;box-shadow:var(--shadow);width:100%;max-width:1180px;
+    max-height:86vh;display:flex;flex-direction:column;overflow:hidden}
+  .modal-box h2{font-size:15px;margin:0;padding:15px 20px;border-bottom:1px solid var(--line);
+    font-weight:700;display:flex;align-items:center;gap:10px}
+  .modal-box .mbody{padding:16px 20px;overflow:auto}
+  .modal-close{margin-left:auto;border:0;background:transparent;font-size:22px;color:var(--dim);cursor:pointer;line-height:1}
+  .modal-close:hover{color:var(--pcb)}
+
+  .toast{position:fixed;right:24px;bottom:24px;z-index:80;background:var(--txt);color:#fff;
+    padding:12px 18px;border-radius:10px;font-size:13px;box-shadow:var(--shadow);opacity:0;
+    transform:translateY(10px);transition:.25s;pointer-events:none}
+  .toast.show{opacity:1;transform:translateY(0)}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <img class="logo" src="/logo.png" alt="云小圈" />
+  <div class="brand"><div class="sysname">云小圈AI硬件质检系统</div><div class="title">质检工作台</div></div>
+  <span class="tb-sp"></span>
+  <span class="pill live" id="op-current" style="font-weight:700">质检员：—</span>
+  <div class="menu" id="menu">
+    <button class="menu-btn" id="menu-btn">我的菜单 ▾</button>
+    <div class="menu-panel">
+      <a href="/">🏠 功能首页</a>
+      <a href="/workbench">质检工作台</a>
+      <a href="/manage" target="_blank" class="adm-link">质检管理看板</a>
+      <a href="/users" target="_blank" class="adm-link">用户管理</a>
+      <a href="/settings" target="_blank" class="adm-link">系统设置</a>
+    </div>
+  </div>
+  <button class="navbtn" id="logout" style="border:none;cursor:pointer">退出登录</button>
+  <!-- 以下保留 id 供 JS 写入，不显示以减少顶栏杂项 -->
+  <span id="last-update" style="display:none"></span>
+  <span id="who" style="display:none"></span>
+</div>
+
+<div class="wrap">
+  <!-- ===== 顶部：当前采购订单（进度看板，JS 渲染进 #batch-current） ===== -->
+  <div class="card order-card">
+    <div class="body">
+      <div id="batch-current"></div>
+    </div>
+  </div>
+
+  <!-- ===== 识别设置（已隐藏：元素保留供自动质检读取，界面精简不显示） ===== -->
+  <div class="sec-h" style="display:none"><h2>识别设置</h2><span class="sub">开检前先定 · 识别方式 + 参数（相机流程共用）</span></div>
+    <div class="card" style="display:none">
+      <div class="body">
+        <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">
+          <label style="display:block;font-size:13px;flex:1;min-width:280px">识别方式
+            <select id="mode" style="width:100%;margin-top:3px">
+              <option value="rules">规则识别（整图自动找日期，无需模板）</option>
+              <option value="template" selected>模板识别（按型号固定框，含 PCB 日期框）</option>
+              <option value="geo">几何定位（每张图现算框，逐槽读 颗粒/PCB/PMIC/SOT）</option>
+            </select></label>
+          <label style="display:block;font-size:13px;flex:1;min-width:220px">型号模板
+            <select id="template-id" style="width:100%;margin-top:3px"><option value="">默认模板</option></select></label>
+        </div>
+        <details style="margin-top:12px">
+          <summary>高级参数</summary>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;font-size:12px;color:var(--dim)">
+            <label style="display:flex;gap:8px;align-items:center">合格阈值 ≤
+              <input id="threshold" type="number" value="10" min="0" step="1" style="width:70px"> 周</label>
+            <label style="display:flex;gap:8px;align-items:center">年份基准
+              <input id="year" type="number" placeholder="自动" style="width:90px"></label>
+            <label style="display:flex;gap:8px;align-items:center" title="识别后让大模型整图数一遍颗粒，检出偏少就提示疑似漏检（多花一次大模型调用）">
+              <input id="vlcheck" type="checkbox"> 整图大模型核对漏检</label>
+          </div>
+        </details>
+      </div>
+    </div>
+
+  <!-- ===== 主流程区：一键开始质检 ===== -->
+  <div class="sec-h"><h2>质检流程</h2><span class="sub">放盘 → 进入拍照页 → 手动点击一次检测一盘</span></div>
+    <div class="card stage">
+      <h2><span class="ix">📷</span>实时质检 <span class="right" id="hik-status" style="font-size:12px;color:var(--dim)">检测相机…</span></h2>
+      <div class="body">
+        <!-- 手动检测入口 -->
+        <div class="qc-hero">
+          <button class="qc-start" id="qc-start">进入拍照检测<span class="rk">手动点击才识别</span></button>
+          <button class="qc-stop" id="qc-stop" style="display:none">✓ 检测完毕</button>
+          <div class="qc-hint" id="qc-hint">进入拍照检测页后，放好托盘并手动点击“拍照并检测”。</div>
+          <button class="btn-sm" id="cam-dbg-toggle" style="margin-top:2px">🎥 相机预览 / 调试</button>
+        </div>
+
+        <!-- 相机预览 / 调试面板（默认收起，点上方「🎥 相机预览 / 调试」展开） -->
+        <div id="cam-dbg" style="display:none;margin-top:14px;padding-top:14px;border-top:1px dashed var(--line2)">
+        <!-- 相机状态 + 实时取景操作 -->
+        <div class="cam-toolbar">
+          <button class="btn-sm" onclick="hikStatus()">↻ 刷新相机</button>
+          <button class="btn-sm" id="cam-refresh">▶ 刷新画面</button>
+          <button class="btn-sm" id="preview-toggle" title="仅收起/展开实时预览画面，相机不断开、后台照常抓帧">▽ 收起预览</button>
+          <span id="cam-devs" style="font-size:12px;color:var(--dim)"></span>
+          <span style="flex:1"></span>
+          <button class="btn-sm" id="tune-toggle" title="调曝光/增益/翻转，设置服务端全局生效，拍摄自动采用">⚙ 相机参数</button>
+        </div>
+
+        <!-- 双相机实时取景（滚轮缩放·拖动·双击复位） -->
+        <div class="cam-wrap">
+          <div class="cam-frame">
+            <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+            <div class="cam-tag"><span class="live"></span>上相机 · 正面 <span class="sn" id="front-state">待连接</span></div>
+            <div class="cam-ph"><svg viewBox="0 0 24 24"><path d="M3 8a2 2 0 0 1 2-2h2l1.4-2h7.2L17 6h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><circle cx="12" cy="12.5" r="3.4"/></svg><div class="t">未取流</div><div class="s">点「刷新画面」或检查相机是否被 MVS 占用</div></div>
+            <img id="view-front" alt="上相机实时画面">
+            <div class="zoom-tools">
+              <button class="zoom-btn" type="button" onclick="zoomStep('front',-0.25)">−</button>
+              <button class="zoom-btn" type="button" onclick="zoomStep('front',0.25)">+</button>
+              <span class="zoom-val" id="zoomval-front">100%</span>
+              <button class="zoom-btn" type="button" onclick="resetZoom('front')">复位</button>
+              <button class="zoom-btn" type="button" onclick="toggleFullscreen('front')" title="全屏显示这一路画面">⛶ 全屏</button>
+            </div>
+          </div>
+          <div class="cam-frame">
+            <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+            <div class="cam-tag"><span class="live"></span>下相机 · 反面 <span class="sn" id="back-state">待连接</span></div>
+            <div class="cam-ph"><svg viewBox="0 0 24 24"><path d="M3 8a2 2 0 0 1 2-2h2l1.4-2h7.2L17 6h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><circle cx="12" cy="12.5" r="3.4"/></svg><div class="t">未取流</div><div class="s">点「刷新画面」或检查相机是否被 MVS 占用</div></div>
+            <img id="view-back" alt="下相机实时画面">
+            <div class="zoom-tools">
+              <button class="zoom-btn" type="button" onclick="zoomStep('back',-0.25)">−</button>
+              <button class="zoom-btn" type="button" onclick="zoomStep('back',0.25)">+</button>
+              <span class="zoom-val" id="zoomval-back">100%</span>
+              <button class="zoom-btn" type="button" onclick="resetZoom('back')">复位</button>
+              <button class="zoom-btn" type="button" onclick="toggleFullscreen('back')" title="全屏显示这一路画面">⛶ 全屏</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 相机参数：曝光/增益/翻转（服务端全局生效） -->
+        <details class="tune" id="tune">
+          <summary>相机参数 · 曝光 / 增益 / 翻转（服务端全局生效，拍摄自动采用）</summary>
+          <div class="tune-grid">
+            <div class="tune-box">
+              <div class="tune-title">上相机 · 正面</div>
+              <div class="tune-row"><label>曝光</label><input id="exp-front" type="number" min="1" step="100"><span>us</span></div>
+              <div class="tune-row"><label>增益</label><input id="gain-front" type="number" step="0.1"><span>dB</span></div>
+              <div class="tune-row"><label>方向</label><select id="orient-front"><option value="none">不翻转</option><option value="fliph">左右镜像</option><option value="flipv">上下翻转</option><option value="rot180">180度</option></select><span></span></div>
+              <button class="btn-sm" style="width:100%;margin-top:10px" onclick="applyCam('front')">应用上相机参数</button>
+              <div class="tiny" id="camrange-front"></div>
+            </div>
+            <div class="tune-box">
+              <div class="tune-title">下相机 · 反面</div>
+              <div class="tune-row"><label>曝光</label><input id="exp-back" type="number" min="1" step="100"><span>us</span></div>
+              <div class="tune-row"><label>增益</label><input id="gain-back" type="number" step="0.1"><span>dB</span></div>
+              <div class="tune-row"><label>方向</label><select id="orient-back"><option value="none">不翻转</option><option value="fliph">左右镜像</option><option value="flipv">上下翻转</option><option value="rot180">180度</option></select><span></span></div>
+              <button class="btn-sm" style="width:100%;margin-top:10px" onclick="applyCam('back')">应用下相机参数</button>
+              <div class="tiny" id="camrange-back"></div>
+            </div>
+          </div>
+        </details>
+        </div><!-- /#cam-dbg 相机预览调试面板 -->
+
+        <!-- 主操作条（旧按钮已隐藏，改由上方「开始质检」驱动） -->
+        <div class="main-actions" style="display:none">
+          <button class="act-primary" id="hik-dual-go">📸📸 同时拍正反 → 识别入库</button>
+          <button class="act-auto" id="hik-both-recog" style="color:var(--blue);background:#fff;border:1px solid #bcd6ff!important" title="双相机同时拍4根正反 → 识别，不入库，供逐根复核">📸 手动拍照识别 · 不入库</button>
+          <button class="act-auto on" id="hik-auto-on" title="放盘后画面静止就自动拍+识别+入库">▶ 静止即拍（自动）</button>
+          <button class="act-auto off" id="hik-auto-off">■ 停自动</button>
+          <span id="hik-auto-state" style="color:var(--dim);font-size:12px"></span>
+        </div>
+
+        <!-- 手动分步（已隐藏） -->
+        <details class="manual-steps" style="display:none">
+          <summary>手动分步拍摄（高级）</summary>
+          <div class="ms-row">
+            <button class="btn-sm" id="hik-cap-front">📸 拍正面</button>
+            <button class="btn-sm" id="hik-cap-back">📸 拍反面</button>
+            <button class="btn-sm" id="hik-recog" style="background:var(--blue);color:#fff;border-color:var(--blue)">🔍 识别正反面</button>
+            <button class="btn-sm" id="hik-reset" title="清空重拍下一根">🔄 重拍</button>
+          </div>
+          <div id="hik-shots" style="display:flex;gap:8px;margin-top:8px"></div>
+        </details>
+
+        <!-- 槽位指示灯：绿=合格 红=不合格 灰=空槽/未检（操作员面对托盘 左→右 1-4） -->
+        <div class="slot-lamps" id="slot-lamps" title="绿=合格 · 红=不合格 · 灰=空槽/未检">
+          <div class="lamp empty" data-slot="1" title="1槽"><span class="led"></span></div>
+          <div class="lamp empty" data-slot="2" title="2槽"><span class="led"></span></div>
+          <div class="lamp empty" data-slot="3" title="3槽"><span class="led"></span></div>
+          <div class="lamp empty" data-slot="4" title="4槽"><span class="led"></span></div>
+        </div>
+
+        <!-- 静止即拍 实时诊断：卡在哪一步、为什么没触发，一眼看清 -->
+        <div id="hik-auto-flow" style="display:none">
+          <div class="af-head">
+            <b>触发流程</b>
+            <span class="af-step" data-s="idle">① 等放盘</span><span class="af-ar">→</span>
+            <span class="af-step" data-s="arming">② 等静止</span><span class="af-ar">→</span>
+            <span class="af-step" data-s="fire">③ 拍照识别入库</span><span class="af-ar">→</span>
+            <span class="af-step" data-s="locked">④ 已入库·等换下一盘</span>
+            <span style="flex:1"></span>
+            <span id="af-count"></span>
+          </div>
+          <!-- 为什么没触发：后端直接给结论 -->
+          <div id="af-why"></div>
+          <!-- 链路实时进度：拍照 → OCR → 大模型 → 框图 → 完成（SSE 分步推送） -->
+          <div id="pipe-flow" style="display:none">
+            <div class="pf-steps">
+              <div class="pf-step" data-k="capture"><i>1</i><span>拍照</span></div>
+              <div class="pf-step" data-k="recognize"><i>2</i><span>Paddle识别日期</span></div>
+              <div class="pf-step" data-k="inspect"><i>3</i><span>大模型质检+读码</span></div>
+              <div class="pf-step" data-k="annotate"><i>4</i><span>标注框图+入库</span></div>
+              <div class="pf-step" data-k="done"><i>✓</i><span>完成</span></div>
+            </div>
+            <div class="pf-text" id="pf-text">等待触发…</div>
+          </div>
+          <!-- 帧差实时条：绿=静止区 / 黄=中间 / 红=运动区；两条刻度线为静止/运动阈值 -->
+          <div class="af-meter">
+            <span class="af-lb">画面变化</span>
+            <div class="af-bar-wrap">
+              <div id="af-bar"></div>
+              <div id="af-still-thr" class="af-tick" title="静止阈值：低于此线才算静止"></div>
+              <div id="af-thr" class="af-tick mo" title="运动阈值：高于此线才算有运动"></div>
+            </div>
+            <span id="af-diff"></span>
+          </div>
+          <div class="af-legend">
+            <span>帧差 <b id="af-v-diff">-</b></span>
+            <span>底噪 <b id="af-v-noise">-</b></span>
+            <span>静止阈值 <b id="af-v-still">-</b></span>
+            <span>运动阈值 <b id="af-v-motion">-</b></span>
+            <span>连续静止 <b id="af-v-cnt">-</b></span>
+            <span>换盘差异 <b id="af-v-scene">-</b></span>
+            <span>取帧 <b id="af-v-frames">-</b></span>
+          </div>
+        </div>
+        <!-- 质检结果（每盘实时刷新：逐槽判定 + 标注框图） -->
+        <div id="hik-dual-result" style="margin-top:6px"><div class="empty" style="padding:26px 10px">检测结果、四槽二维码、耗时和 Token 在手动拍照检测页显示。</div></div>
+      </div>
+    </div>
+
+  <!-- ===== 综合判定 + 标签（已隐藏：元素保留供 JS，自动入库无需人工填标签） ===== -->
+  <div class="sec-h" style="display:none"><h2>综合判定与入库</h2><span class="sub">外观+日期全合格才绿灯 · 核对标签后保存</span></div>
+    <div class="card" style="display:none">
+      <div class="body">
+        <div id="verdict"><div class="empty" style="padding:26px 6px">选择文件夹识别后，这里给出综合判定。</div></div>
+        <div class="info" style="margin-top:14px">
+          <label>序列号(SN)<input id="sn" type="text" placeholder="内存条唯一Id"></label>
+          <label>品牌<input id="brand" type="text" placeholder="Samsung…"></label>
+          <label>型号<input id="model" type="text" placeholder="M321R8GA0PB0…"></label>
+          <label>频率<input id="frequency" type="text" placeholder="DDR5-5600…"></label>
+        </div>
+        <button class="go save" id="save-record" disabled>保存质检记录</button>
+      </div>
+    </div>
+
+  <!-- ===== 识别详情区（已隐藏：元素保留供 JS） ===== -->
+  <div class="sec-h" style="display:none"><h2>识别详情</h2><span class="sub">识别结果 · 外观质检 · 解码汇总</span></div>
+  <div class="grid" style="display:none">
+    <div class="card">
+      <h2><span class="ix">2</span>识别结果 <span class="right" id="stat-mini"></span></h2>
+      <div class="body">
+        <div class="legend">
+          <span><i class="dot" style="background:var(--dram)"></i>存储颗粒</span>
+          <span><i class="dot" style="background:var(--controller)"></i>主控/PCB</span>
+          <span><i class="dot" style="background:var(--controller)"></i>原文(未解码)</span>
+          <span style="color:var(--dim)">读不出即显示 OCR 原文，不显示"遮挡"</span>
+        </div>
+        <div class="stat" id="stat"></div>
+        <div id="results"><div class="empty">拍摄并「识别」后，这里并排展示正/反面标注结果。</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="ix">3</span>外观质检 &amp; 解码汇总</h2>
+      <div class="body">
+        <div id="inspect-result"><div class="empty">识别时同时做外观质检（Qwen-VL）。</div></div>
+        <div id="summary" style="margin-top:14px"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 当天记录/复查/追溯已移到「质检管理看板」(/manage)，工作台顶栏「📋 看板」进入 -->
+
+<div class="toast" id="toast"></div>
+
+<script>
+const COLORS={pcb:"var(--pcb)",controller:"var(--controller)",dram:"var(--dram)",
+  pmic:"#00a0ff",sot:"#dc50ff",unknown:"var(--unknown)"};
+let lastData=null, lastInspect=null;
+const modeSel=document.getElementById('mode');
+
+function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2200);}
+
+/* ===== 综合判定：外观 + 日期 都合格才亮绿灯 ===== */
+const verdictState={date:{done:false,problems:[],note:''},inspect:{done:false,problems:[],note:''}};
+function setDateVerdict(d){
+  const s=d.signal||{}, dates=d.dates||{};
+  const problems=(dates.date_fail||[]).map(x=>'<b>日期</b>：'+x);
+  let note='';
+  if(!problems.length){
+    note = s.status==='unknown' ? ('日期：'+s.message)
+      : ('日期：'+s.message+'（比对 '+s.count+' 个，'+s.earliest+' ～ '+s.latest+'）');
+  }
+  verdictState.date={done:true,problems,note};renderVerdict();
+}
+function currentVerdict(){
+  const ds=verdictState.date,is=verdictState.inspect;
+  const problems=[...ds.problems,...is.problems];
+  if(problems.length)return{status:'fail',problems};
+  if(ds.done&&is.done)return{status:'pass',problems:[]};
+  return{status:'unknown',problems:[]};
+}
+function renderVerdict(){
+  const v=document.getElementById('verdict');
+  const ds=verdictState.date,is=verdictState.inspect;
+  const cv=currentVerdict();let title,sub;
+  if(cv.status==='fail'){title='🔴 不合格';sub='发现以下问题，请人工复核：';}
+  else if(cv.status==='pass'){title='🟢 合格';sub='外观与日期均符合要求';}
+  else{const w=[];if(!is.done)w.push('外观质检');if(!ds.done)w.push('日期识别');title='⏳ 进行中';sub='等待：'+w.join(' / ');}
+  let html='<div class="signal '+cv.status+'"><div class="lamp"></div><div>'
+    +'<div class="big">'+title+'</div><div class="desc">'+sub+'</div></div></div>';
+  if(cv.problems.length){html+='<ul class="problems">'+cv.problems.map(p=>'<li>'+p+'</li>').join('')+'</ul>';}
+  else if(cv.status==='pass'){html+=[ds.note,is.note].filter(Boolean).map(o=>'<div class="okline">✓ '+o+'</div>').join('');}
+  v.innerHTML=html;
+  document.getElementById('save-record').disabled=!lastData;
+}
+
+function statusLabel(c){
+  const pre=(c.code_type==='dram'&&c.idx)?('<span style="color:var(--dim)">#'+c.idx+'</span> '):'';
+  if(c.week)return pre+'<b>'+((c.year%100))+'年'+c.week+'周</b>';
+  const raw=(c.raw||'').trim();
+  if(raw)return pre+'<span class="badge unclear" title="OCR 原始读数，未能解码为年/周">原文 '+raw+'</span>';
+  return pre+'<span class="badge unknown">未识别</span>';
+}
+
+function render(d){
+  lastData=d;
+  setDateVerdict(d);
+  const modeTxt=d.mode==='template'?'模板识别':'规则识别';
+  document.getElementById('stat-mini').innerHTML=
+    '<span style="color:var(--dim);font-size:12px">'+modeTxt+' · 日期用时 '+(d.ocr_sec!=null?d.ocr_sec:d.elapsed_sec)+'s · 共 '+d.total+' 处</span>';
+  // 整图大模型核对漏检的告警
+  const warns=d.coverage_warn||[];
+  document.getElementById('stat').innerHTML = warns.length
+    ? '<div style="background:#fff7e6;border:1px solid #f4d58a;color:#b9770a;padding:8px 12px;border-radius:8px;font-size:13px">⚠ 疑似漏检：'+warns.map(w=>w.replace(/</g,'')).join('；')+'</div>'
+    : '';
+
+  // 托盘多根：逐根判定一行（与工位屏一致）
+  const sticks=d.sticks||[];
+  let sticksHtml='';
+  if(sticks.length>=2){
+    sticksHtml='<div style="border:1px solid #d6e4f5;background:#f5f8fc;border-radius:10px;padding:10px 14px;margin-bottom:12px">'+
+      '<div style="font-weight:700;margin-bottom:6px">本盘 '+sticks.length+' 根 · 逐根判定（同一根内比，不跨根）</div>'+
+      sticks.map(s=>{
+        const st=s.signal||{}, dt=s.dates||{};
+        const v=st.status;
+        const tag=v==='pass'?'<b style="color:#0f9d58">🟢合格</b>':(v==='fail'?'<b style="color:#d92d2d">🔴不合格</b>':'<b style="color:#b9770a">⏳待定</b>');
+        const nk=(s.counts||{}).dram||0;
+        const why=v==='fail'?('　'+((dt.date_fail||[]).join('；')||st.message||'')):'';
+        return '<div style="padding:3px 0;border-top:1px solid #e6eef7">第'+(s.pos||s.slot+1)+'槽　'+tag+'　颗粒'+nk+why+'</div>';
+      }).join('')+'</div>';
+  }
+  document.getElementById('results').innerHTML=sticksHtml+'<div class="results">'+
+    d.sides.map(s=>{
+      const t=Date.now();
+      const rows=s.codes.map(c=>{
+        const col=COLORS[c.code_type]||COLORS.unknown;
+        const lab=statusLabel(c);
+        const byVL=(c.note||'').indexOf('大模型')>=0;
+        const src=byVL?'<span class="badge unclear" title="OCR 置信不足，改由大模型识别">大模型</span>':'';
+        const conf=(c.confidence!=null && c.code_type==='dram')
+          ?('<span class="conf">OCR '+Math.round(c.confidence*100)+'%</span>'):'';
+        const note=c.note?('<div class="note">'+c.note+'</div>'):'';
+        return '<tr><td><span class="dot" style="background:'+col+'"></span></td>'
+          +'<td>'+lab+' '+src+note+'</td>'
+          +'<td>'+conf+'</td></tr>';
+      }).join('');
+      return '<div class="resimg"><div class="cap">'+s.title+'</div>'
+        +'<img src="'+s.annotated_url+'?t='+t+'" style="cursor:zoom-in" title="点击查看大图" onclick="window.open(this.src,\'_blank\')">'
+        +'<details open><summary>该面 '+s.codes.length+' 处逐项（真实 OCR 置信）</summary>'
+        +'<table style="margin:2px 4px"><tbody>'+rows+'</tbody></table></details></div>';
+    }).join('')+'</div>';
+
+  // 汇总
+  if(!d.summary||!d.summary.length){document.getElementById('summary').innerHTML='';}
+  else{
+    const srows=d.summary.map(g=>{
+      const c=COLORS[g.code_type]||COLORS.unknown;
+      return '<tr><td><span class="tag" style="background:'+c+'">'+g.type_label+'</span></td>'
+        +'<td><b>'+g.description+'</b></td>'
+        +'<td class="mono">×'+g.count+'</td><td class="conf">'+Math.round(g.max_confidence*100)+'%</td></tr>';
+    }).join('');
+    document.getElementById('summary').innerHTML=
+      '<div style="font-size:12px;color:var(--dim);margin-bottom:6px">解码汇总</div>'
+      +'<table><thead><tr><th>类型</th><th>结果</th><th>数量</th><th>置信</th></tr></thead><tbody>'+srows+'</tbody></table>';
+  }
+}
+
+/* ===== 外观质检渲染 ===== */
+function renderInspect(d){
+  const box=document.getElementById('inspect-result');
+  if(!d||!d.ok){
+    verdictState.inspect={done:true,problems:['<b>外观</b>：质检调用失败（'+((d&&d.error)||'调用大模型出错')+'）'],note:''};
+    box.innerHTML='<div class="note" style="font-size:13px">⚠️ 外观质检失败：'+((d&&d.error)||'调用大模型出错')+'</div>';renderVerdict();return;
+  }
+  lastInspect=d;
+  const pass=d.qualified;
+  verdictState.inspect={done:true,
+    problems:(d.appearance_fails||[]).map(r=>'<b>外观</b>：'+r),
+    note:pass?'外观：元器件无损坏/发黑，金手指正常，芯片二维码标记均有线条':''};
+  let html='<div class="times"><span class="timechip">'+(pass?'外观 ✓ 正常':'外观 ✗ 异常')+'</span>'
+    +'<span class="timechip">大模型用时 <b>'+(d.model_sec!=null?d.model_sec:(d.elapsed_sec||'-'))+'s</b></span>'
+    +'<span class="timechip">模型 <b>'+d.model+'</b></span></div>';
+  if(!pass&&d.reasons&&d.reasons.length){html+='<ul class="problems">'+d.reasons.map(x=>'<li>'+x+'</li>').join('')+'</ul>';}
+  const dt=d.details||{};const rows=[];
+  if(dt.components)rows.push(['元器件','损坏:'+yn(dt.components.damaged)+' 发黑:'+yn(dt.components.blackened),dt.components.detail||'']);
+  if(dt.gold_finger)rows.push(['金手指',yn2(dt.gold_finger.normal),dt.gold_finger.detail||'']);
+  if(dt.chip_marks){const abn=dt.chip_marks.all_have_lines===false;
+    rows.push(['芯片二维码标记',abn?'<span style="color:var(--pcb)">出现异常</span>':'均有线条（正常）',dt.chip_marks.detail||'']);}
+  if(rows.length){
+    html+='<details style="margin-top:8px"><summary>大模型明细</summary>'
+      +'<table style="margin:6px 0"><thead><tr><th>检查项</th><th>结论</th><th>说明</th></tr></thead><tbody>'
+      +rows.map(r=>'<tr><td>'+r[0]+'</td><td>'+r[1]+'</td><td style="color:var(--dim)">'+r[2]+'</td></tr>').join('')
+      +'</tbody></table></details>';
+  }
+  box.innerHTML=html;renderVerdict();
+}
+function yn(b){return b?'<span style="color:var(--pcb)">是</span>':'否';}
+function yn2(b){return b===false?'<span style="color:var(--pcb)">否</span>':'是';}
+
+/* 组合渲染：识别 + 外观 + 标签自动填 */
+function renderCombined(d){
+  verdictState.date={done:false,problems:[],note:''};
+  verdictState.inspect={done:false,problems:[],note:''};
+  render(d.recognize);
+  if(d.inspect) renderInspect(d.inspect);
+  const L=d.label||{};
+  if(L.sn)document.getElementById('sn').value=L.sn;
+  if(L.brand)document.getElementById('brand').value=L.brand;
+  if(L.model)document.getElementById('model').value=L.model;
+  if(L.frequency)document.getElementById('frequency').value=L.frequency;
+}
+
+/* ===== 质检员：登录账号即质检员（谁登录谁署名，无需确认） ===== */
+let _loginName='';
+function currentOperator(){return _loginName.trim();}   // 直接用登录账号
+function renderOperatorPill(){
+  const el=document.getElementById('op-current');const op=currentOperator();
+  el.textContent='质检员：'+(op||'—');
+  el.style.color=op?'var(--dram)':'var(--pcb)';
+}
+/* 门禁：登录账号即质检员，正常情况恒为真；未取到登录名（异常）才拦 */
+function ensureOperator(){
+  if(currentOperator())return true;
+  toast('未取到登录账号，请重新登录');return false;
+}
+function initOperator(){renderOperatorPill();}
+
+/* ===== 当前采购订单（只读展示；选择/拉取/登记都在 /orders 页做）===== */
+let currentBatch=null;
+function esc(s){return (s==null?'':String(s)).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function normCapacity(v){const s=String(v||'').trim();const m=s.match(/^(\d+)\s*(?:G|GB)$/i);return m?`${m[1]}GB`:s}
+function renderCurrentBatch(){
+  const el=document.getElementById('batch-current');
+  if(!currentBatch){
+    el.innerHTML='<div class="ord-empty">📦 未选择订单 <a href="/orders">去订单页选择 / 拉取 ›</a></div>';
+    return;
+  }
+  const b=currentBatch;
+  const q=b.qty_expected||0, done=b.total||0, ok=b.passed||0, ng=Math.max(0,done-ok);
+  const remain=q?Math.max(0,q-done):null;
+  const ppct=q?Math.min(100,Math.round(done/q*100)):(done?100:0);
+  // 规格标签
+  const chips=[];
+  if(b.brand||b.model)chips.push('<span class="chip">'+esc((b.brand||'')+' '+(b.model||'')).trim()+'</span>');
+  if(b.capacity)chips.push('<span class="chip">'+esc(normCapacity(b.capacity))+'</span>');
+  if(b.frequency)chips.push('<span class="chip">'+esc(b.frequency)+'</span>');
+  if(b.kd_specification)chips.push('<span class="chip soft">规格 '+esc(b.kd_specification)+'</span>');
+  if(b.cond)chips.push('<span class="chip soft">'+esc(b.cond)+'</span>');
+  if(b.supplier)chips.push('<span class="chip soft">'+esc(b.supplier)+'</span>');
+  if(b.remark)chips.push('<span class="chip soft">来源 '+esc(b.remark)+'</span>');
+  // 进度盘（有应检数才显示进度条+差额；未填应检只显示已检累计）
+  let prog;
+  if(q){
+    const rc=remain>0?'go':'done', rt=remain>0?('还差 '+remain):'已拍够 ✓';
+    prog='<div class="ord-prog">'
+      +'<div class="pg-top"><span class="pg-num">已检 <b>'+done+'</b>/'+q+'</span>'
+        +'<span class="pg-remain '+rc+'">'+rt+'</span></div>'
+      +'<div class="pg-bar"><i style="width:'+ppct+'%"></i></div>'
+      +'<div class="pg-foot"><span class="ok">良 <b>'+ok+'</b></span>'
+        +'<span class="ng">不良 <b>'+ng+'</b></span></div></div>';
+  }else{
+    prog='<div class="ord-prog"><div class="pg-top"><span class="pg-num">已检 <b>'+done+'</b> 根</span></div>'
+      +'<div class="pg-foot"><span class="ok">良 <b>'+ok+'</b></span>'
+        +'<span class="ng">不良 <b>'+ng+'</b></span></div></div>';
+  }
+  el.innerHTML='<div class="ord">'
+    +'<div class="ord-main">'
+      +'<span class="ord-ic"><svg viewBox="0 0 24 24"><path d="M21 3v6h-6"/><path d="M21 9a9 9 0 1 0-2.6 6.4"/><path d="M9 8h6M9 12h6M9 16h4"/></svg></span>'
+      +'<div class="ord-txt"><div class="ord-no">'+esc(b.batch_no||'(无号)')+'<span class="cust">'+esc(b.customer||'?')+'</span></div>'
+      +'<div class="ord-chips">'+chips.join('')+'</div></div>'
+    +'</div>'
+    +prog
+    +'<a class="ord-switch" href="/orders">切换订单 ›</a>'
+  +'</div>';
+}
+async function initBatch(){
+  const saved=localStorage.getItem('batch_id');
+  if(!saved){renderCurrentBatch();return;}
+  try{
+    const d=await(await fetch('/api/orders/'+encodeURIComponent(saved))).json();
+    if(d.ok && d.batch){currentBatch=d.batch;}
+    else{currentBatch=null;localStorage.removeItem('batch_id');}   // 订单已删/结单 → 清掉
+  }catch(e){currentBatch=null;}
+  renderCurrentBatch();
+}
+/* 每检完一根后调用：重新拉当前订单的已检/良品数，进度盘实时 +1 */
+async function refreshBatch(){
+  if(!currentBatch||!currentBatch.id)return;
+  try{
+    const d=await(await fetch('/api/orders/'+encodeURIComponent(currentBatch.id))).json();
+    if(d.ok&&d.batch){currentBatch=d.batch;renderCurrentBatch();}
+  }catch(e){}
+}
+
+/* ===== 保存质检记录 ===== */
+document.getElementById('save-record').onclick=async()=>{
+  if(!lastData){alert('请先执行一次识别');return;}
+  if(!ensureOperator())return;
+  const operator=currentOperator();
+  const sn=document.getElementById('sn').value.trim();
+  if(!sn && !confirm('未填写序列号(SN)，仍要保存吗？'))return;
+  const cv=currentVerdict();
+  const dates=lastData.dates||{};
+  const ins=lastInspect||{};
+  const fail_desc=cv.problems.map(p=>p.replace(/<[^>]+>/g,'')).join('；');
+  const b=currentBatch||{};
+  const rec={
+    operator, sn,
+    // 批次登记为准：有当前批次则品牌/频率/客户/容量/批次号取批次
+    brand:(b.brand||document.getElementById('brand').value.trim()),
+    model:document.getElementById('model').value.trim(),
+    frequency:(b.frequency||document.getElementById('frequency').value.trim()),
+    customer:b.customer||'', capacity:b.capacity||'', batch_no:b.batch_no||'',
+    cond:b.cond||'', remark:b.remark||'',
+    controller_date:dates.controller_date||null,
+    pcb_date:dates.pcb_date||null,
+    storage_chips:dates.storage_chips||[],
+    date_ok:dates.date_ok,
+    comp_ok:(lastInspect?ins.comp_ok:null),
+    gold_finger_ok:(lastInspect?ins.gold_finger_ok:null),
+    chip_mark_ok:(lastInspect?ins.chip_mark_ok:null),
+    verdict:cv.status,
+    fail_desc:(cv.status==='fail'?fail_desc:''),
+    review_status:'未复查',
+  };
+  const btn=document.getElementById('save-record');btn.disabled=true;btn.textContent='保存中…';
+  try{
+    const d=await(await fetch('/api/records',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(rec)})).json();
+    if(!d.ok)throw new Error(d.error||'保存失败');
+    toast('已保存质检记录 #'+d.id+'，可在「📋 看板」查看');
+    refreshBatch();                              // 进度盘实时 +1
+  }catch(e){alert('保存失败：'+e.message);}
+  btn.disabled=false;btn.textContent='保存质检记录';
+};
+
+/* 当天记录/人工复查/追溯 已移到「质检管理看板」(/manage)：顶栏「📋 看板」进入。 */
+
+/* ===== 海康工业相机：状态 + 实时取景 + 参数（相机调试已并入本页） ===== */
+const $=id=>document.getElementById(id);
+const previewView={front:{scale:1,x:0,y:0,dragging:false,sx:0,sy:0,ox:0,oy:0},
+                   back:{scale:1,x:0,y:0,dragging:false,sx:0,sy:0,ox:0,oy:0}};
+let _camStarted=false;
+
+async function hikStatus(){
+  const el=document.getElementById('hik-status');
+  try{
+    const d=await(await fetch('/api/hik/status')).json();
+    if(!d.sdk){el.textContent='相机SDK未就绪';el.style.color='var(--pcb)';return;}
+    const devs=d.devices||[];
+    if(!devs.length){const m=d.error?('无相机 · '+d.error):'未发现相机（可能被 MVS 等程序占用）';
+      el.textContent=m;el.style.color='var(--pcb)';return;}
+    el.textContent='● 已连 '+devs.length+' 台';el.style.color='var(--dram)';
+    let devTxt=devs.map(c=>c.sn).join(' / ');
+    const net=d.net||{};                    // 网卡链路速度：<1Gbps 相机会掉线，红字告警
+    if(net.speed_mbps){
+      const w=net.warn;
+      el.textContent+=' · 网卡'+net.speed_mbps+'Mbps'+(w?'⚠️':'');
+      if(w){el.style.color='var(--pcb)';el.title='网卡仅 '+net.speed_mbps+'Mbps（应≥1000）。相机会取帧超时/掉线，请换千兆网线或换交换机口。';
+        devTxt+=' · 网卡'+net.speed_mbps+'Mbps⚠️';}
+    }
+    const dv=document.getElementById('cam-devs');if(dv)dv.textContent=devTxt;
+    // 界面精简：预览画面已隐藏，不再自动拉 MJPEG 流（省相机带宽）；服务端自行做静止检测
+  }catch(e){el.textContent='状态获取失败';el.style.color='var(--pcb)';}
+}
+
+/* --- 实时取景：MJPEG 流 + 滚轮缩放 / 拖动 / 双击复位 --- */
+function applyPreviewTransform(side){const st=previewView[side],img=$('view-'+side);if(!img)return;
+  img.style.transform='translate('+st.x+'px,'+st.y+'px) scale('+st.scale+')';
+  const v=$('zoomval-'+side);if(v)v.textContent=Math.round(st.scale*100)+'%';}
+function setZoom(side,val){const st=previewView[side];const n=Math.max(1,Math.min(6,parseFloat(val)||1));
+  st.scale=n;if(n===1){st.x=0;st.y=0;}applyPreviewTransform(side);}
+function zoomStep(side,delta){setZoom(side,+(previewView[side].scale+delta).toFixed(2));}
+function resetZoom(side){const st=previewView[side];st.scale=1;st.x=0;st.y=0;applyPreviewTransform(side);}
+/* 全屏显示某一路画面：对该路 cam-frame 调浏览器原生全屏 API。相机/拉流不受影响，退出全屏(Esc)自动复原。 */
+function toggleFullscreen(side){
+  const img=$('view-'+side); if(!img)return;
+  const frame=img.closest('.cam-frame'); if(!frame)return;
+  const fsEl=document.fullscreenElement||document.webkitFullscreenElement;
+  if(fsEl){ (document.exitFullscreen||document.webkitExitFullscreen).call(document); return; }
+  const req=frame.requestFullscreen||frame.webkitRequestFullscreen;
+  if(req)req.call(frame); else alert('当前浏览器不支持全屏');
+}
+function bindPreviewTools(side){const img=$('view-'+side);if(!img||img.dataset.zoomBound)return;img.dataset.zoomBound='1';
+  img.addEventListener('dragstart',e=>e.preventDefault());
+  img.addEventListener('wheel',e=>{e.preventDefault();const st=previewView[side];setZoom(side,+(st.scale+(e.deltaY<0?0.18:-0.18)).toFixed(2));},{passive:false});
+  img.addEventListener('pointerdown',e=>{const st=previewView[side];st.dragging=true;st.sx=e.clientX;st.sy=e.clientY;st.ox=st.x;st.oy=st.y;img.classList.add('dragging');img.setPointerCapture(e.pointerId);});
+  img.addEventListener('pointermove',e=>{const st=previewView[side];if(!st.dragging)return;st.x=st.ox+e.clientX-st.sx;st.y=st.oy+e.clientY-st.sy;applyPreviewTransform(side);});
+  const end=e=>{const st=previewView[side];st.dragging=false;img.classList.remove('dragging');try{img.releasePointerCapture(e.pointerId);}catch(_){}}
+  img.addEventListener('pointerup',end);img.addEventListener('pointercancel',end);
+  img.addEventListener('dblclick',()=>resetZoom(side));applyPreviewTransform(side);}
+function bindReconnect(side){const img=$('view-'+side),flag=$(side+'-state');
+  img.onload=()=>{img.dataset.retry='0';if(flag)flag.textContent='取流中';};
+  img.onerror=()=>{if(!_camStarted)return;const n=Math.min(parseInt(img.dataset.retry||'0',10)+1,6);img.dataset.retry=String(n);
+    const wait=Math.min(1500*Math.pow(2,n-1),8000);if(flag)flag.textContent='重连 '+n;img.removeAttribute('src');clearTimeout(img._rt);
+    img._rt=setTimeout(()=>{if(_camStarted)img.src='/api/hik/preview?side='+side+'&t='+Date.now();},wait);};}
+function startPreview(){_camStarted=true;
+  ['front','back'].forEach(s=>{bindPreviewTools(s);bindReconnect(s);const img=$('view-'+s);if(!img)return;
+    img.dataset.retry='0';img.src='/api/hik/preview?side='+s+'&t='+Date.now();applyPreviewTransform(s);});
+  loadCam('front');loadCam('back');loadOrient();}
+/* 只停本机拉流（不动 .cam-wrap 显隐、不写 localStorage）：相机后台照常抓帧，质检不受影响。 */
+function stopPreview(){_camStarted=false;
+  ['front','back'].forEach(s=>{const img=$('view-'+s);if(img){clearTimeout(img._rt);img.removeAttribute('src');}});}
+
+/* 收起/展开预览：仅隐藏画面并停本机拉流，相机后台照常抓帧、绝不断开（拍照/静止即拍不受影响）。 */
+let _previewCollapsed=false;
+function setPreviewCollapsed(collapsed){
+  _previewCollapsed=collapsed;
+  const wrap=document.querySelector('.cam-wrap');
+  const btn=$('preview-toggle');
+  if(collapsed){
+    _camStarted=false;                                   // 停重连循环
+    ['front','back'].forEach(s=>{const img=$('view-'+s);if(img){clearTimeout(img._rt);img.removeAttribute('src');}});
+    if(wrap)wrap.style.display='none';                   // 只隐藏画面容器
+    if(btn)btn.textContent='△ 展开预览';
+  }else{
+    if(wrap)wrap.style.display='';
+    if(btn)btn.textContent='▽ 收起预览';
+    startPreview();                                      // 恢复拉流
+  }
+  try{localStorage.setItem('preview_collapsed',collapsed?'1':'0');}catch(_){}
+}
+
+/* --- 相机参数：曝光 / 增益 / 翻转（服务端全局生效） --- */
+async function loadCam(side){try{
+  const e=await(await fetch('/api/hik/exposure?side='+side)).json();
+  const g=await(await fetch('/api/hik/gain?side='+side)).json();
+  if(e.ok)$('exp-'+side).value=Math.round(e.cur);
+  if(g.ok)$('gain-'+side).value=g.cur;
+  const r=[];if(e.ok)r.push('曝光 '+Math.round(e.min)+'-'+Math.round(e.max)+'us');if(g.ok)r.push('增益 '+g.min+'-'+g.max+'dB');
+  $('camrange-'+side).textContent=r.join(' · ');}catch(_){}}
+async function applyCam(side){try{
+  const exp=$('exp-'+side).value,gain=$('gain-'+side).value;
+  if(exp!==''){const fd=new FormData();fd.append('exposure_us',exp);fd.append('side',side);
+    const d=await(await fetch('/api/hik/exposure',{method:'POST',body:fd})).json();if(!d.ok)throw new Error(d.error||'曝光设置失败');}
+  if(gain!==''){const fd=new FormData();fd.append('gain_db',gain);fd.append('side',side);
+    const d=await(await fetch('/api/hik/gain',{method:'POST',body:fd})).json();if(!d.ok)throw new Error(d.error||'增益设置失败');}
+  await setOrient(side,$('orient-'+side).value,false);await loadCam(side);
+  toast((side==='front'?'上相机':'下相机')+'参数已应用');}catch(e){alert('设置失败：'+(e.message||e));}}
+async function loadOrient(){try{const d=await(await fetch('/api/hik/orient')).json();
+  if(d.ok)for(const s of ['front','back'])if(d.orient&&d.orient[s])$('orient-'+s).value=d.orient[s];}catch(_){}}
+async function setOrient(side,mode,notify=true){const fd=new FormData();fd.append('side',side);fd.append('mode',mode);
+  const d=await(await fetch('/api/hik/orient',{method:'POST',body:fd})).json();if(!d.ok)throw new Error(d.error||'方向设置失败');
+  $('view-'+side).src='/api/hik/preview?side='+side+'&t='+Date.now();
+  if(notify)toast((side==='front'?'上相机':'下相机')+'方向已更新');}
+
+/* --- 型号模板下拉 --- */
+async function loadTemplates(){try{
+  const d=await(await fetch('/api/templates')).json();const sel=$('template-id');if(!sel)return;
+  const list=d.templates||[];
+  sel.innerHTML='<option value="">默认模板</option>'+list.map(t=>{
+    const id=t.id||t.template_id||'';const name=t.name||t.label||id;
+    const seld=(id&&id===d.default)?' selected':'';
+    return '<option value="'+esc(id)+'"'+seld+'>'+esc(name)+'</option>';}).join('');
+}catch(_){}}
+function hikNewUid(){window._hikUid=(Date.now().toString(36)+Math.random().toString(36).slice(2,8));return window._hikUid;}
+async function hikCapture(side){
+  // 正面视为"新一根"的开始 → 换新 uid；反面沿用同一 uid，便于一起识别
+  if(side==='front' || !window._hikUid) hikNewUid();
+  const fd=new FormData();fd.append('side',side);fd.append('uid',window._hikUid);
+  const btn=document.getElementById('hik-cap-'+side);const old=btn.textContent;btn.disabled=true;btn.textContent='拍摄中…';
+  try{
+    const d=await(await fetch('/api/hik/capture',{method:'POST',body:fd})).json();
+    if(!d.ok)throw new Error(d.error||'拍摄失败');
+    window._hikShots=window._hikShots||{};window._hikShots[side]=d.image_url;
+    renderHikShots();toast((side==='front'?'正面':'反面')+'已拍，可继续拍另一面或点「识别」');
+  }catch(e){alert('拍摄出错：'+e.message);}
+  btn.disabled=false;btn.textContent=old;
+}
+function renderHikShots(){
+  const box=document.getElementById('hik-shots');const s=window._hikShots||{};
+  box.innerHTML=['front','back'].map(k=>s[k]?('<div style="flex:1;text-align:center"><div style="font-size:12px;color:var(--dim)">'+(k==='front'?'正面':'反面')+'</div><img src="'+s[k]+'?t='+Date.now()+'" style="max-width:100%;border-radius:8px;cursor:zoom-in" onclick="window.open(this.src,\'_blank\')"></div>'):'').join('');
+}
+async function hikRecognize(){
+  if(!window._hikUid || !(window._hikShots&&(window._hikShots.front||window._hikShots.back))){
+    alert('请先拍正面/反面');return;}
+  const fd=new FormData();fd.append('uid',window._hikUid);fd.append('mode',modeSel.value);{const _tpl=$('template-id');if(_tpl&&_tpl.value)fd.append('template_id',_tpl.value);}
+  if(document.getElementById('vlcheck').checked)fd.append('vl_check','true');
+  const y=document.getElementById('year').value;if(y)fd.append('current_year',y);
+  const th=document.getElementById('threshold').value;if(th!=='')fd.append('threshold',th);
+  const btn=document.getElementById('hik-recog');btn.disabled=true;btn.textContent='识别中…';
+  try{
+    const d=await(await fetch('/api/hik/recognize',{method:'POST',body:fd})).json();
+    if(!d.ok)throw new Error(d.error||'识别失败');
+    renderCombined(d);toast('识别完成，可核对后保存');
+  }catch(e){alert('识别出错：'+e.message);}
+  btn.disabled=false;btn.textContent='🔍 识别正反面';
+}
+function hikReset(){window._hikUid=null;window._hikShots={};renderHikShots();toast('已清空，可拍下一根');}
+document.getElementById('hik-cap-front').onclick=()=>hikCapture('front');
+document.getElementById('hik-cap-back').onclick=()=>hikCapture('back');
+document.getElementById('hik-recog').onclick=hikRecognize;
+document.getElementById('hik-reset').onclick=hikReset;
+
+/* ===== 托盘双相机：一键 同时拍正反→识别入库（实时取景就在上方，曝光/增益/翻转见「⚙ 相机参数」） ===== */
+// 相机参数（曝光/增益/方向校正）设置服务端全局生效，拍摄自动采用。
+// 把识别到的二维码信息回填到「当前内存条」的框(单根或多根取第一根)
+// SN 只认二维码：解出=绿(可信)；未解出=红+留空(待人工，不填大模型猜的)
+function fillLabelFields(d){
+  const s=(d && d.multi && Array.isArray(d.sticks) && d.sticks.length) ? d.sticks[0] : d;
+  if(!s) return;
+  const snEl=document.getElementById('sn');
+  if(snEl){
+    if(s.sn){snEl.value=s.sn; snEl.style.borderColor='#12b76a'; snEl.title='SN 来自二维码精确解码（可信）';}
+    else if(s.sn_unread){snEl.value=''; snEl.style.borderColor='#d92d2d';
+      snEl.placeholder='⚠ 二维码未解出，SN 待人工补录'; snEl.title='二维码没解开→SN 不采纳大模型猜测，请人工补录';}
+  }
+  if(s.brand)document.getElementById('brand').value=s.brand;
+  if(s.model)document.getElementById('model').value=s.model;
+  if(s.frequency)document.getElementById('frequency').value=s.frequency;
+  touchLastUpdate();
+}
+function touchLastUpdate(){
+  const el=document.getElementById('last-update');
+  if(el)el.textContent='最近更新 '+new Date().toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).replace(/\//g,'-');
+}
+touchLastUpdate();
+/* 更新槽位指示灯：绿=合格 红=不合格 灰=空槽/未检。d 为识别结果（多根 d.sticks / 单根 d）。 */
+function updateSlotLamps(d){
+  const lamps=document.querySelectorAll('#slot-lamps .lamp');
+  if(!lamps.length)return;
+  // 收集每槽判定：占位检测跳过的空槽不在 sticks 里 → 保持灰（空槽/未检）
+  const bySlot={};
+  const list=(d&&d.multi&&Array.isArray(d.sticks))?d.sticks:(d&&d.verdict?[{slot_pos:d.slot_pos||1,verdict:d.verdict}]:[]);
+  list.forEach(s=>{if(s&&s.slot_pos)bySlot[String(s.slot_pos)]=s.verdict;});
+  lamps.forEach(el=>{
+    const pos=el.getAttribute('data-slot');
+    const v=bySlot[pos];
+    el.classList.remove('pass','fail','empty');
+    if(v==='pass'){el.classList.add('pass');}
+    else if(v==='fail'){el.classList.add('fail');}
+    else{el.classList.add('empty');}
+  });
+}
+function renderCaptureSaveResult(d){
+  try{updateSlotLamps(d);}catch(_){}          // 同步刷新槽位指示灯（绿/红/灰）
+  const a=d.annotated||{};
+  const fig=(url,cap)=>url?('<figure style="margin:0;flex:1;min-width:0"><figcaption style="font-size:11px;color:var(--dim);margin-bottom:2px">'+cap+'</figcaption>'
+      +'<a href="'+url+'" target="_blank"><img src="'+url+'?t='+Date.now()+'" style="width:100%;border-radius:6px;border:1px solid #e6eef7;display:block"></a></figure>'):'';
+  const imgs=(a.front||a.back)?('<div style="display:flex;gap:8px;margin-top:8px">'+fig(a.front,'正面·标注框图')+fig(a.back,'反面·标注框图')+'</div>'):'';
+  if(d.duplicate){
+    return '<div style="background:#fff7e6;border:1px solid #f4d58a;color:#b9770a;padding:8px 12px;border-radius:8px">⚠ 本批已测过同样的一盘（SN 一致），已跳过、未重复入库</div>';
+  }
+  if(d.multi&&Array.isArray(d.sticks)){
+    const rows=d.sticks.map(s=>{
+      const v=s.verdict,tag=v==='pass'?'<b style="color:#0f9d58">🟢合格</b>':(v==='fail'?'<b style="color:#d92d2d">🔴不合格</b>':'<b style="color:#b9770a">⏳待定</b>');
+      const snTxt=s.sn?(' · SN '+s.sn):(s.sn_unread?' · <span style="color:#d92d2d">⚠SN二维码未解出·待人工</span>':'');
+      return '<div style="padding:3px 0;border-top:1px solid #e6eef7">第'+s.slot_pos+'槽 '+tag+snTxt+' · 颗粒'+(s.storage_count||0)+(v==='fail'?('：'+(s.fail_desc||'')):'')+(s.record_id?(' · 记录#'+s.record_id):'')+'</div>';
+    }).join('');
+    return '<div style="border:1px solid #d6e4f5;background:#f5f8fc;border-radius:10px;padding:10px 12px">'
+      +'<div style="font-weight:700;margin-bottom:6px">本盘 '+d.stick_count+' 根'+((d.sticks||[]).some(s=>s.record_id)?' · 已入库':' · 未入库（复核）')+'</div>'+rows
+      +(imgs?('<div style="margin-top:6px;font-size:12px;color:var(--dim)">'+imgs+'</div>'):'')+'</div>';
+  }
+  const v=d.verdict,tag=v==='pass'?'🟢合格':(v==='fail'?'🔴不合格':'⏳待定');
+  const snTxt=d.sn?(' · SN '+d.sn):(d.sn_unread?' · <span style="color:#d92d2d">⚠SN二维码未解出·待人工</span>':'');
+  return '<div style="border:1px solid #d6e4f5;background:#f5f8fc;border-radius:10px;padding:10px 12px">'
+    +tag+snTxt+' · 颗粒'+(d.storage_count||0)+(d.record_id?(' · 记录#'+d.record_id):'')
+    +(imgs?('<div style="margin-top:6px;font-size:12px">'+imgs+'</div>'):'')+'</div>';
+}
+async function hikCaptureAndSave(){
+  if(!ensureOperator())return;                  // 署名用登录账号；异常取不到才拦
+  const btn=document.getElementById('hik-dual-go');
+  const box=document.getElementById('hik-dual-result');
+  const fd=new FormData();
+  fd.append('mode',modeSel.value);{const _tpl=$('template-id');if(_tpl&&_tpl.value)fd.append('template_id',_tpl.value);}
+  fd.append('operator',currentOperator());      // 记录署名（原缺失→自动入库 operator 为空）
+  const th=document.getElementById('threshold').value; if(th!=='')fd.append('threshold',th);
+  const y=document.getElementById('year').value; if(y)fd.append('current_year',y);
+  if(typeof currentBatch!=='undefined'&&currentBatch&&currentBatch.id)fd.append('batch_id',currentBatch.id);
+  btn.disabled=true;btn.textContent='拍摄+识别中…';
+  box.innerHTML='<div class="empty" style="padding:10px">上下相机同时拍摄 → 识别入库中…</div>';
+  try{
+    const d=await(await fetch('/api/hik/capture_and_save',{method:'POST',body:fd})).json();
+    if(d.ok===false&&d.error)throw new Error(d.error);
+    box.innerHTML=renderCaptureSaveResult(d);
+    fillLabelFields(d);                         // 二维码信息回填到 SN/品牌/型号/频率
+    if(!d.duplicate)refreshBatch();             // 进度盘实时 +1（重复盘已跳过不计）
+    toast(d.duplicate?'本批已测过，已跳过':'已识别并入库');
+  }catch(e){box.innerHTML='<div style="color:#d92d2d;padding:6px">出错：'+e.message+'</div>';}
+  btn.disabled=false;btn.textContent='📸📸 同时拍正反 → 识别入库';
+}
+document.getElementById('hik-dual-go').onclick=hikCaptureAndSave;
+
+/* ===== 手动拍照识别（双拍4根正反→识别，不入库，供复核）===== */
+async function hikCaptureBothRecognize(){
+  const btn=document.getElementById('hik-both-recog');
+  const box=document.getElementById('hik-dual-result');
+  const fd=new FormData();
+  fd.append('mode',modeSel.value);{const _tpl=$('template-id');if(_tpl&&_tpl.value)fd.append('template_id',_tpl.value);}
+  fd.append('operator',currentOperator());
+  const th=document.getElementById('threshold').value; if(th!=='')fd.append('threshold',th);
+  const y=document.getElementById('year').value; if(y)fd.append('current_year',y);
+  const old=btn.textContent;btn.disabled=true;btn.textContent='拍摄+识别中…';
+  const stop=startPipeTicker(box,'拍照+识别（不入库）');   // 实时显示已用秒数+当前步
+  try{
+    const d=await(await fetch('/api/hik/capture_both_recognize',{method:'POST',body:fd})).json();
+    stop();
+    if(d.ok===false&&d.error)throw new Error(d.error);
+    const n=d.stick_count||(d.multi&&d.sticks?d.sticks.length:1);
+    box.innerHTML='<div style="background:#eef6ff;border:1px solid #bcd6ff;color:var(--blue-d);padding:9px 12px;border-radius:8px;font-size:13px;margin-bottom:8px">✓ 已识别 <b>'+n+'</b> 根（<b>未入库</b>）——逐根 SN/判定见下，复核无误后点「同时拍正反 → 识别入库」正式入库</div>'+renderTiming(d.timing,d.elapsed_sec)+renderCaptureSaveResult(d);
+    fillLabelFields(d);                          // 顶部标签回填（多根取第一根，逐根 SN 见结果区）
+    toast('已识别 '+n+' 根，未入库，用时 '+(d.elapsed_sec||(d.timing&&d.timing.total)||'?')+'s');
+  }catch(e){stop();box.innerHTML='<div style="color:#d92d2d;padding:6px">出错：'+e.message+'</div>';}
+  btn.disabled=false;btn.textContent=old;
+}
+/* 一个脉动的灯 + 已用秒数，请求飞行期间每 0.1s 刷新 */
+function startPipeTicker(box,title){
+  const t0=performance.now();
+  const tm=setInterval(()=>{
+    const s=(performance.now()-t0)/1000;
+    box.innerHTML='<div style="display:flex;align-items:center;gap:12px;padding:16px 14px">'
+      +'<span style="width:16px;height:16px;border-radius:50%;flex:0 0 auto;'
+      +'background:radial-gradient(circle at 34% 30%,#8fc0ff,var(--blue));'
+      +'box-shadow:0 0 0 4px rgba(10,92,213,.18);animation:blink 1.2s ease-in-out infinite"></span>'
+      +'<span style="font-size:14px;color:var(--dim)">'+title+' · 已用 '
+      +'<b style="color:var(--blue)">'+s.toFixed(1)+'s</b></span></div>';
+  },100);
+  return ()=>clearInterval(tm);
+}
+/* 后端返回的分步耗时 → 一行小结 */
+function renderTiming(t,total){
+  if(!t&&!total)return '';
+  const seg=[];
+  if(t){if(t.capture!=null)seg.push('拍照 '+t.capture+'s');
+        if(t.recognize!=null)seg.push('识别/OCR '+t.recognize+'s');
+        if(t.crop!=null)seg.push('裁图 '+t.crop+'s');
+        if(t.inspect_label!=null)seg.push('质检+读码 '+t.inspect_label+'s');}
+  const tot=(t&&t.total)||total;
+  return '<div style="background:#f6f8fa;border:1px solid var(--line);border-radius:8px;padding:7px 11px;font-size:12px;color:var(--dim);margin-bottom:8px">⏱ 链路耗时：'
+    +(seg.length?seg.join(' · ')+' · ':'')+'<b style="color:var(--ink)">合计 '+tot+'s</b></div>';
+}
+document.getElementById('hik-both-recog').onclick=hikCaptureBothRecognize;
+
+/* ===== 静止即拍(自动触发)：放盘静止就自动拍→识别→入库；手动仍可用 ===== */
+async function hikAutoStart(){
+  if(!ensureOperator())return;                  // 署名用登录账号；异常取不到才拦
+  const fd=new FormData();
+  fd.append('mode',modeSel.value);{const _tpl=$('template-id');if(_tpl&&_tpl.value)fd.append('template_id',_tpl.value);}
+  fd.append('operator',currentOperator());      // 记录署名（原缺失→静止即拍入库 operator 为空）
+  const th=document.getElementById('threshold').value; if(th!=='')fd.append('threshold',th);
+  const y=document.getElementById('year').value; if(y)fd.append('current_year',y);
+  if(typeof currentBatch!=='undefined'&&currentBatch&&currentBatch.id)fd.append('batch_id',currentBatch.id);
+  try{
+    const d=await(await fetch('/api/hik/auto/start',{method:'POST',body:fd})).json();
+    if(!d.ok)throw new Error(d.error||'启动失败');
+    document.getElementById('hik-auto-state').textContent='● 自动中';
+    qcSetRunning(true);                          // 仪式感按钮切换到「质检中」
+    hikAutoSSE();
+    hikAutoPollStart();                         // 启动实时流程显示
+    toast('静止即拍已开：放盘后静止就自动识别入库');
+  }catch(e){qcSetRunning(false);alert('开启失败：'+e.message);}
+}
+async function hikAutoStop(){
+  const trays=_afPrevCount>0?_afPrevCount:0;    // 本次开检以来自动拍了几盘
+  window._hikAutoWant=false;                    // 阻止 SSE 重连
+  try{if(window._hikAutoES){window._hikAutoES.close();window._hikAutoES=null;}}catch(_){}
+  try{await fetch('/api/hik/auto/stop',{method:'POST'});}catch(e){}
+  hikAutoPollStop();
+  document.getElementById('hik-auto-state').textContent='已停';
+  qcSetRunning(false);                          // 仪式感按钮回到「开始质检」
+  refreshBatch();                               // 收尾再拉一次订单进度，数字对齐
+  if(trays)toast('检测完毕：本次共检 '+trays+' 盘（约 '+trays*4+' 根），进度见顶部订单条');
+  else toast('已结束本次质检');
+}
+/* ===== 仪式感按钮：开始/质检中 两态切换 ===== */
+function qcSetRunning(on){
+  const btn=document.getElementById('qc-start'), stop=document.getElementById('qc-stop'),
+        hint=document.getElementById('qc-hint');
+  if(!btn)return;
+  if(on){
+    btn.classList.add('running');
+    btn.innerHTML='质检中<span class="rk">取盘→放下一盘→自动拍</span>';
+    stop.style.display='';
+    hint.textContent='连续质检中：识别完就取盘、放下一盘，静止即自动拍。全部检完点「✓ 检测完毕」。';
+  }else{
+    btn.classList.remove('running');
+    btn.innerHTML='开始质检<span class="rk">放盘后自动连续</span>';
+    stop.style.display='none';
+    hint.textContent='放好托盘后点「开始质检」，画面静止即自动拍摄识别入库，一盘接一盘无需再点。';
+  }
+}
+/* ===== 链路实时进度：拍照→OCR→大模型→框图→完成（SSE stage 事件驱动）===== */
+const PF_ORDER=['capture','recognize','inspect','annotate','done'];
+let _pfT0=0,_pfTimer=null;
+function pfSetStage(stage,text){
+  const box=document.getElementById('pipe-flow');if(!box)return;
+  box.style.display='block';
+  const i=PF_ORDER.indexOf(stage);
+  document.querySelectorAll('#pipe-flow .pf-step').forEach(el=>{
+    const k=PF_ORDER.indexOf(el.dataset.k);
+    el.classList.toggle('ok', i>=0 && k<i);              // 走过的=绿
+    el.classList.toggle('cur', k===i);                    // 当前=蓝+呼吸
+  });
+  // 起步(拍照)时开计时；完成后停表，保留总耗时
+  if(stage==='capture'){_pfT0=performance.now();clearInterval(_pfTimer);
+    _pfTimer=setInterval(()=>{const el=document.getElementById('pf-el');
+      if(el)el.textContent=((performance.now()-_pfT0)/1000).toFixed(1)+'s';},100);}
+  if(stage==='done'){clearInterval(_pfTimer);_pfTimer=null;
+    document.querySelectorAll('#pipe-flow .pf-step').forEach(el=>el.classList.add('ok'));}
+  const el=(performance.now()-_pfT0)/1000;
+  document.getElementById('pf-text').innerHTML=
+    (stage==='done'?'✓ ':'<span class="spin"></span>')+esc(text||'')
+    +'<span class="el" id="pf-el">'+(_pfT0?el.toFixed(1)+'s':'')+'</span>';
+}
+
+/* ===== 静止即拍 实时流程显示（轮询 /api/hik/auto/status）===== */
+let _afTimer=null,_afPrevCount=-1,_afFlashing=false;
+function afSetStep(active){
+  document.querySelectorAll('#hik-auto-flow .af-step').forEach(el=>{
+    const on=el.dataset.s===active;
+    el.style.background=on?(active==='fire'?'#12b76a':(active==='locked'?'#f79009':'var(--blue-d)')):'#eef2f7';
+    el.style.color=on?'#fff':'var(--faint)';
+    el.style.fontWeight=on?'800':'400';
+  });
+}
+function hikAutoPollStart(){
+  if(_afTimer)return;
+  document.getElementById('hik-auto-flow').style.display='block';   // 显示实时诊断面板
+  _afPrevCount=-1;_afFlashing=false;
+  _afTimer=setInterval(hikAutoPoll,500); hikAutoPoll();
+}
+function hikAutoPollStop(){
+  if(_afTimer){clearInterval(_afTimer);_afTimer=null;}
+  document.getElementById('hik-auto-flow').style.display='none';
+}
+async function hikAutoPoll(){
+  let d;try{d=await(await fetch('/api/hik/auto/status')).json();}catch(_){return;}
+  if(!d.running){hikAutoPollStop();return;}
+  const p=d.params||{}, motion=+p.motion||8, stillThr=+p.still||1.5, needF=+p.still_frames||4;
+  const cnt=d.count||0, diff=+(d.last_diff||0), noise=+(d.noise||0), sc=+(d.still||0);
+  const scale=Math.max(motion*1.5, diff*1.1, 0.1);      // 标尺随实际帧差自适应，别把线顶出界
+  document.getElementById('af-count').textContent='已拍 '+cnt+' 盘';
+  // 帧差条：低于静止阈值=绿(可触发)，超运动阈值=红(在动)，中间=黄(卡住区)
+  const bar=document.getElementById('af-bar');
+  bar.style.width=Math.min(100,diff/scale*100).toFixed(0)+'%';
+  bar.style.background=diff<stillThr?'#12b76a':(diff>motion?'#d92d20':'#f79009');
+  document.getElementById('af-still-thr').style.left=Math.min(100,stillThr/scale*100).toFixed(0)+'%';
+  document.getElementById('af-thr').style.left=Math.min(100,motion/scale*100).toFixed(0)+'%';
+  document.getElementById('af-diff').textContent=diff.toFixed(2)+' / 静'+stillThr+' / 动'+motion;
+  // 数值区
+  const setv=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+  setv('af-v-diff',diff.toFixed(2));
+  setv('af-v-noise',noise?noise.toFixed(2):'-');
+  setv('af-v-still',stillThr);
+  setv('af-v-motion',motion);
+  setv('af-v-cnt',sc+' / '+needF+' 帧');
+  setv('af-v-scene',d.state==='locked'?(+(d.scene_diff||0)).toFixed(2)+' / '+(p.scene||3.5):'—');
+  setv('af-v-frames',(d.frames||0)+' 帧');
+  // 为什么没触发：后端给结论；底噪压过阈值(永远不触发)标橙告警
+  const why=document.getElementById('af-why');
+  if(why){
+    const msg=d.blocked||'';
+    why.textContent=msg?('为什么没触发：'+msg):'状态正常';
+    why.className=(noise&&noise>=stillThr)?'warn':'';
+  }
+  if(_afPrevCount>=0 && cnt>_afPrevCount){           // 刚触发一次 → 闪现「③拍照」
+    _afFlashing=true; afSetStep('fire');
+    setTimeout(()=>{_afFlashing=false;},1300);
+    toast('✅ 已自动拍第 '+cnt+' 盘');
+  }
+  _afPrevCount=cnt;
+  if(!_afFlashing) afSetStep(d.state);               // 正常按状态机高亮当前步
+}
+function hikAutoSSE(){
+  window._hikAutoWant=true;
+  if(window._hikAutoES && window._hikAutoES.readyState!==2)return;   // 已连着就不重开
+  const es=new EventSource('/api/pipeline/stream'); window._hikAutoES=es;
+  es.onmessage=e=>{let d;try{d=JSON.parse(e.data)}catch(_){return}
+    if(d.type==='stage'){ pfSetStage(d.stage,d.text); return; }   // 链路分步进度
+    if(d.type==='result'){
+      pfSetStage('done','已完成'+(d.duplicate?'（本批重复，已跳过入库）':'，结果见下方'));
+      document.getElementById('hik-dual-result').innerHTML=renderCaptureSaveResult(d);  // 整块替换→框图刷新
+      fillLabelFields(d);                       // 静止即拍:二维码信息回填到 SN/品牌/型号/频率
+      if(!d.duplicate)refreshBatch();           // 静止即拍入库→进度盘实时 +1
+    }
+  };
+  // 断线不主动 close(让浏览器自动重连);彻底关闭则延时重建,保证连续作业不掉更新
+  es.onerror=()=>{ if(es.readyState===2){ window._hikAutoES=null; if(window._hikAutoWant) setTimeout(hikAutoSSE,3000); } };
+}
+document.getElementById('hik-auto-on').onclick=hikAutoStart;
+document.getElementById('hik-auto-off').onclick=hikAutoStop;
+// 仪式感「开始质检 / 停止质检」→ 复用静止即拍自动模式
+document.getElementById('qc-start').onclick=()=>{ location.href='/camera'; };
+document.getElementById('qc-stop').onclick=hikAutoStop;
+// 「🎥 相机预览 / 调试」面板：展开才拉 MJPEG 流（省带宽），收起即停流
+document.getElementById('cam-dbg-toggle').onclick=()=>{
+  const box=document.getElementById('cam-dbg'), btn=document.getElementById('cam-dbg-toggle');
+  const open=box.style.display==='none';
+  box.style.display=open?'block':'none';
+  btn.textContent=open?'🎥 收起相机预览 / 调试':'🎥 相机预览 / 调试';
+  if(open){
+    const wrap=document.querySelector('.cam-wrap');
+    if(wrap)wrap.style.display='';      // 防止历史「收起预览」状态残留导致展开后空白
+    startPreview(); box.scrollIntoView({behavior:'smooth',block:'nearest'});
+  }else{ stopPreview(); }               // 停重连循环 + 断本机拉流（相机后台照常，不影响质检）
+};
+// 实时取景 / 相机参数 接线
+document.getElementById('cam-refresh').onclick=startPreview;
+document.getElementById('preview-toggle').onclick=()=>setPreviewCollapsed(!_previewCollapsed);
+/* 收起/展开已由外层「🎥 相机预览 / 调试」面板统一管，不再恢复旧的 preview_collapsed 状态
+   （否则历史残留的 '1' 会让面板展开后是空白）。 */
+try{localStorage.removeItem('preview_collapsed');}catch(_){}
+document.getElementById('tune-toggle').onclick=()=>{const t=document.getElementById('tune');t.open=!t.open;if(t.open)t.scrollIntoView({behavior:'smooth',block:'nearest'});};
+document.getElementById('orient-front').onchange=e=>setOrient('front',e.target.value);
+document.getElementById('orient-back').onchange=e=>setOrient('back',e.target.value);
+loadTemplates();
+hikStatus();
+
+/* 顶栏"我的菜单"开合 */
+document.getElementById('menu-btn').onclick=e=>{e.stopPropagation();document.getElementById('menu').classList.toggle('open')};
+document.addEventListener('click',()=>document.getElementById('menu').classList.remove('open'));
+document.getElementById('logout').onclick=async()=>{await fetch('/api/logout',{method:'POST'});location.href='/login';};
+// 显示当前登录用户；质检员隐藏管理员入口（看板/用户管理/设置）；记住登录名供"一键用登录账号"
+(async()=>{try{const d=await(await fetch('/api/me')).json();
+  if(d.authenticated){
+    document.getElementById('who').textContent=d.username+'（'+(d.role==='admin'?'管理员':'质检员')+'）';
+    if(d.role!=='admin')document.querySelectorAll('.adm-link').forEach(el=>el.style.display='none');
+    _loginName=d.username||'';
+    renderOperatorPill();                        // 登录名即质检员，取到后刷新署名
+  }
+}catch(e){}})();
+
+initOperator();initBatch();
+</script>
+</body>
+</html>

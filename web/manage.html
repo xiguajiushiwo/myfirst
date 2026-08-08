@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>质检管理看板 · 云小圈AI硬件质检系统</title>
+<link rel="icon" href="/favicon.png">
+<link rel="stylesheet" href="/app.css">
+<style>
+.rec-detail{margin-top:6px;font-size:13px}
+.rec-detail summary{cursor:pointer;color:#1552d0;user-select:none;font-weight:600}
+.rec-detail .kvs{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:2px 14px;margin:6px 0}
+.rec-detail .kv{display:flex;gap:6px;padding:2px 0;border-bottom:1px dashed #eee}
+.rec-detail .kv .k{color:#888;min-width:56px;flex:none}
+.rec-detail .kv .v{color:#222;font-weight:500}
+.rec-detail .muted{color:#bbb}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <img class="logo" src="/logo.png" alt="云小圈">
+  <div class="brand"><div class="sysname">云小圈AI硬件质检系统</div><div class="title">质检管理看板</div></div>
+  <span class="sp"></span>
+  <span class="pill live" id="live">实时统计运行中</span>
+  <span class="pill muted" id="lastup">最近更新 —</span>
+  <span class="user" id="user">管理员</span>
+  <div class="menu" id="menu">
+    <button class="menu-btn" id="menu-btn">我的菜单 ▾</button>
+    <div class="menu-panel">
+      <a href="/">🏠 功能首页</a>
+      <a href="/workbench">质检工作台</a>
+      <a href="/manage">质检管理看板</a>
+      <a href="/users">用户管理</a>
+      <a href="/settings">系统设置</a>
+    </div>
+  </div>
+  <button class="logout" id="logout">退出登录</button>
+</div>
+
+<div style="max-width:none;padding:22px 26px 0">
+  <h1 style="font-size:30px;font-weight:900;letter-spacing:-.5px;margin:0 0 6px">质检管理看板</h1>
+  <p style="color:var(--dim);font-size:14px;margin:0">良品率看板、按客户/批次统计、记录明细与人工复查、导出报表，并可按 SN 追溯防偷换。</p>
+</div>
+
+<!-- KPI -->
+<div class="kpis" id="kpis" style="margin-top:16px"></div>
+
+<!-- 筛选工具栏 -->
+<div class="toolbar">
+  <div class="field"><label>日期起</label><input type="date" id="f-from"></div>
+  <div class="field"><label>日期止</label><input type="date" id="f-to"></div>
+  <div class="field"><label>客户</label><select id="f-customer"><option value="">全部客户</option></select></div>
+  <div class="field"><label>批次</label><select id="f-batch"><option value="">全部批次</option></select></div>
+  <div class="field"><label>判定</label><select id="f-verdict">
+    <option value="">全部</option><option value="pass">合格</option><option value="fail">不合格</option><option value="unknown">待定</option></select></div>
+  <div class="field" style="flex:1"><label>关键词（SN/品牌/型号）</label><input type="text" id="f-kw" placeholder="多词空格分隔"></div>
+  <button class="btn ghost" onclick="refreshAll()">刷新</button>
+  <button class="btn ghost" onclick="exportRecords('xlsx')">导出Excel</button>
+  <button class="btn ghost" onclick="exportRecords('csv')">导出CSV</button>
+</div>
+
+<!-- 按 SN 追溯 + 同 SN 历史比对（防偷换第二道）-->
+<div class="filters" style="margin-top:6px">
+  <div class="field" style="flex:1"><label>按 SN 追溯（查这根历次质检 + 日期是否被换过）</label>
+    <input type="text" id="sn-q" placeholder="输入或扫入 SN，回车查询" onkeydown="if(event.key==='Enter')snLookup()"></div>
+  <button class="btn primary" onclick="snLookup()">查历史</button>
+</div>
+<div id="sn-result" style="margin:6px 0"></div>
+
+<!-- 双看板：左=批次，右=质检记录 -->
+<div class="boards">
+  <div class="board amber">
+    <div class="head">批次看板 <span class="count" id="batch-count">0</span></div>
+    <div class="body" id="batch-body"><div class="empty">加载中…</div></div>
+  </div>
+  <div class="board blue">
+    <div class="head">质检记录 <span class="count" id="rec-count">0</span></div>
+    <div class="body" id="rec-body"><div class="empty">加载中…</div></div>
+  </div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+function pct(y){return y==null?'—':(y*100).toFixed(1)+'%'}
+function rateCls(y){if(y==null)return 'mid';return y>=0.95?'good':(y>=0.8?'mid':'bad')}
+function esc(s){return (s==null?'':String(s)).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+function normCapacity(v){const s=String(v||'').trim();const m=s.match(/^(\d+)\s*(?:G|GB)$/i);return m?`${m[1]}GB`:s}
+function verdictTag(v){const m={pass:['pass','合格'],fail:['fail','不合格']};const x=m[v]||['unknown','待定'];return `<span class="tag ${x[0]}">${x[1]}</span>`}
+/* 三态外观/日期 → ✓合格 / ✗不合格 / —（tinyint 返回 1/0/null）*/
+function okTag(v){return v==null?'<span class="muted">—</span>':(v?'<span style="color:#0f7a3d;font-weight:600">✓合格</span>':'<span style="color:#b42318;font-weight:600">✗不合格</span>')}
+/* 颗粒明细数组 → 「正面#1:2417　反面#1:2417…」*/
+function chipText(chips){
+  if(!chips||!chips.length)return '<span class="muted">无</span>';
+  const side={front:'正面',back:'反面',pcb:'PCB'};
+  return chips.map(c=>`${side[c.side]||esc(c.side)||''}#${c.idx==null?'?':c.idx}:${esc(c.yyyyww)||'—'}${c.status&&c.status!=='ok'?'('+esc(c.status)+')':''}`).join('　');
+}
+function kv(k,v){return `<div class="kv"><span class="k">${k}</span><span class="v">${v}</span></div>`}
+function sec(v){return Number.isFinite(Number(v))?Number(v).toFixed(3)+'s':'—'}
+function timingText(t){
+  t=t||{};const names={capture:'拍照',file_prepare:'图片准备',slot_detect_crop:'槽位/裁图',rule_ocr:'规则OCR',appearance:'外观',label_decode:'二维码',parallel_analysis:'并行分析',archive:'归档',database:'入库'};
+  return Object.entries(names).filter(([k])=>t[k]!=null).map(([k,n])=>n+' '+sec(t[k])).join(' · ')||'—';
+}
+function tokenText(t){t=t||{};return `总计 ${t.total_tokens||0}（输入 ${t.prompt_tokens||0} / 输出 ${t.completion_tokens||0} / 调用 ${t.calls||0}）`}
+/* 一条记录的「全部数据」展开块——数据库每一列都在这里可见 */
+function detailBlock(r){
+  const link=(u,t)=>u?`<a class="btn-xs" href="${u}" target="_blank">${t}</a>`:'';
+  const lb=r.label_data||{};
+  const grid=[
+    kv('SN',esc(r.sn)||'—'),kv('品牌',esc(r.brand)||'—'),kv('型号',esc(r.model)||'—'),
+    kv('容量',esc(r.capacity)||'—'),kv('频率',esc(r.frequency)||'—'),
+    kv('规格',esc(r.spec)||'—'),kv('厂商',esc(r.mfg)||'—'),
+    kv('主控日期',esc(r.controller_date)||'—'),kv('PCB日期',esc(r.pcb_date)||'—'),
+    kv('元器件',okTag(r.comp_ok)),kv('金手指',okTag(r.gold_finger_ok)),
+    kv('芯片标记',okTag(r.chip_mark_ok)),kv('日期一致',okTag(r.date_ok)),
+    kv('客户',esc(r.customer)||'—'),kv('供应商',esc(r.supplier)||'—'),kv('批次',esc(r.batch_no)||'—'),
+    kv('成色',esc(r.cond)||'—'),kv('槽位',r.slot_pos==null?'—':('第'+r.slot_pos+'槽')),
+    kv('操作人',esc(r.operator)||'—'),kv('复查',esc(r.review_status)||'—'),
+    kv('时间',esc(r.created_at)||'—'),kv('备注',esc(r.remark)||'—'),
+    kv('检测批次ID',esc(r.inspection_id)||'—'),kv('识别方式',r.recognition_mode==='rules'?'规则识别':esc(r.recognition_mode)||'—'),
+    kv('单次总耗时',sec(r.elapsed_sec||(r.timing||{}).total)),kv('本次 Token',esc(tokenText(r.token_usage))),
+    kv('二维码SN',esc(lb.sn)||'未识别'),kv('二维码型号',esc(lb.model)||'—'),
+    kv('二维码规格',esc(lb.spec)||'—'),kv('二维码厂商批次',esc(lb.mfg)||'—'),
+    kv('二维码来源',esc(lb.src)||'—'),
+  ].join('');
+  const imgs=[link(r.front_img,'正面原图'),link(r.back_img,'背面原图'),
+    link(r.annotated_front,'正面标注'),link(r.annotated_back,'背面标注')].filter(Boolean).join(' ')||'—';
+  return `<details class="rec-detail"><summary>全部数据 ▾</summary>
+    <div class="kvs">${grid}</div>
+    <div class="kv"><span class="k">颗粒(${r.storage_count})</span><span class="v">${chipText(r.storage_chips)}</span></div>
+    <div class="kv"><span class="k">分阶段耗时</span><span class="v">${esc(timingText(r.timing))}</span></div>
+    <div class="kv"><span class="k">二维码原文</span><span class="v">${esc(lb.raw)||'未识别'}</span></div>
+    <div class="kv"><span class="k">图片</span><span class="v">${imgs}</span></div>
+  </details>`;
+}
+
+/* 菜单开合 */
+$('menu-btn').onclick=e=>{e.stopPropagation();$('menu').classList.toggle('open')};
+document.addEventListener('click',()=>$('menu').classList.remove('open'));
+$('logout').onclick=async()=>{await fetch('/api/logout',{method:'POST'});location.href='/login';};
+(async()=>{try{const d=await(await fetch('/api/me')).json();if(d.authenticated)$('user').textContent=d.username+'（'+(d.role==='admin'?'管理员':'质检员')+'）';}catch(e){}})();
+
+let allRecords=[], allBatches=[];
+
+async function loadKpis(){
+  try{
+    const d=await(await fetch('/api/stats/overview')).json();
+    const one=(lab,o)=>`<div class="kpi"><div class="lab">${lab}</div><div class="val">${pct(o.yield)}</div>
+      <div class="sub">良品 ${o.passed} / 已检 ${o.total}</div>
+      <div class="bar"><i style="width:${o.yield==null?0:o.yield*100}%"></i></div></div>`;
+    const activeBatches=allBatches.filter(b=>b.active).length;
+    $('kpis').innerHTML=one('今日良品率',d.today)+one('累计良品率',d.all)+
+      `<div class="kpi"><div class="lab">在检批次</div><div class="val">${activeBatches}</div><div class="sub">共 ${allBatches.length} 个批次</div></div>`+
+      `<div class="kpi"><div class="lab">今日已检</div><div class="val">${d.today.total}</div><div class="sub">累计 ${d.all.total} 根</div></div>`;
+  }catch(e){}
+}
+
+async function loadBatches(){
+  try{
+    allBatches=(await(await fetch('/api/batches')).json()).batches||[];
+  }catch(e){allBatches=[]}
+  // 填充筛选下拉
+  const fb=$('f-batch'), cur=fb.value;
+  fb.innerHTML='<option value="">全部批次</option>'+allBatches.map(b=>`<option value="${esc(b.batch_no)}">${esc(b.batch_no||'#'+b.id)}</option>`).join('');
+  fb.value=cur;
+  renderBatches();
+}
+function renderBatches(){
+  const box=$('batch-body');
+  if(!allBatches.length){box.innerHTML='<div class="empty">暂无批次 —— 去工作台登记</div>';$('batch-count').textContent=0;return;}
+  $('batch-count').textContent=allBatches.length;
+  box.innerHTML=allBatches.map(b=>`<div class="item amber">
+    <div class="row1">
+      <div class="main">
+        <div class="spec">${esc(b.batch_no)||'#'+b.id}
+          <span class="tag cat">${esc(b.brand)||'—'}</span>
+          ${b.model?`<span class="tag cat">${esc(b.model)}</span>`:''}
+          <span class="tag cat">${esc(normCapacity(b.capacity))||''}</span>
+          <span class="tag cat">${esc(b.frequency)||''}</span>
+          ${b.kd_specification?`<span class="tag cat">规格 ${esc(b.kd_specification)}</span>`:''}
+          ${b.cond?`<span class="tag new">${esc(b.cond)}</span>`:''}
+          ${b.active?'<span class="tag old">在检</span>':'<span class="tag unknown">已结</span>'}</div>
+        <div class="meta"><span>客户 ${esc(b.customer)||'—'}</span>${b.supplier?`<span>供应商 ${esc(b.supplier)}</span>`:''}<span>登记 ${esc(b.created_at||'')}</span>${b.remark?`<span>来源 ${esc(b.remark)}</span>`:''}</div>
+      </div>
+      <div style="text-align:right">
+        <div class="price"><span class="rate ${rateCls(b.yield)}">${pct(b.yield)}</span></div>
+        <div class="meta" style="justify-content:flex-end">已检 ${b.total} · 良品 ${b.passed}</div>
+        ${b.qty_expected?`<div class="meta" style="justify-content:flex-end">应检 ${b.qty_expected} · <span style="${b.qty_remain>0?'color:var(--red);font-weight:700':'color:var(--green);font-weight:700'}">${b.qty_remain>0?('差 '+b.qty_remain):'已拍够'}</span></div>`:''}
+      </div>
+    </div>
+    <div class="acts">
+      <button class="btn-xs" onclick="filterByBatch('${esc(b.batch_no)}')">看本批记录</button>
+    </div></div>`).join('');
+}
+function filterByBatch(no){$('f-batch').value=no;renderRecords();window.scrollTo({top:0,behavior:'smooth'});}
+
+async function loadRecords(){
+  try{
+    allRecords=(await(await fetch('/api/records?limit=300')).json()).records||[];
+  }catch(e){allRecords=[]}
+  // 客户下拉
+  const cs=[...new Set(allRecords.map(r=>r.customer).filter(Boolean))];
+  const fc=$('f-customer'), cur=fc.value;
+  fc.innerHTML='<option value="">全部客户</option>'+cs.map(c=>`<option>${esc(c)}</option>`).join('');
+  fc.value=cur;
+  renderRecords();
+}
+function recMatch(r){
+  const c=$('f-customer').value, b=$('f-batch').value, v=$('f-verdict').value;
+  const kw=$('f-kw').value.trim().toLowerCase().split(/[\s,，]+/).filter(Boolean);
+  const from=$('f-from').value, to=$('f-to').value;
+  if(c && r.customer!==c)return false;
+  if(b && r.batch_no!==b)return false;
+  if(v && r.verdict!==v)return false;
+  const day=(r.created_at||'').slice(0,10);
+  if(from && day<from)return false;
+  if(to && day>to)return false;
+  if(kw.length){const hay=((r.sn||'')+' '+(r.brand||'')+' '+(r.model||'')+' '+(r.capacity||'')+' '+(r.frequency||'')+' '+((r.label_data||{}).raw||'')+' '+(r.inspection_id||'')).toLowerCase();
+    if(!kw.every(w=>hay.includes(w)))return false;}
+  return true;
+}
+function exportRecords(fmt){
+  const q=new URLSearchParams({format:fmt});
+  const c=$('f-customer').value, b=$('f-batch').value, v=$('f-verdict').value;
+  const from=$('f-from').value, to=$('f-to').value;
+  if(c)q.set('customer',c); if(b)q.set('batch_no',b); if(v)q.set('verdict',v);
+  if(from)q.set('date_from',from); if(to)q.set('date_to',to);
+  window.open('/api/records/export?'+q.toString(),'_blank');
+}
+async function snLookup(){
+  const sn=$('sn-q').value.trim();
+  const box=$('sn-result');
+  if(!sn){box.innerHTML='';return;}
+  box.innerHTML='<div class="empty">查询中…</div>';
+  try{
+    const d=await(await fetch('/api/records/by_sn/'+encodeURIComponent(sn))).json();
+    const recs=d.records||[], diff=d.diff||{};
+    if(!recs.length){box.innerHTML='<div class="empty">没有 SN='+esc(sn)+' 的记录</div>';return;}
+    const banner=diff.changed
+      ? '<div style="background:#fdecea;border:1px solid #f5b5b0;color:#b42318;padding:8px 12px;border-radius:8px;font-weight:700">'+esc(diff.message)+'</div>'
+      : '<div style="background:#e7f6ec;border:1px solid #a6dab7;color:#0f7a3d;padding:8px 12px;border-radius:8px">'+esc(diff.message)+'（共 '+recs.length+' 次）</div>';
+    const rows=recs.map(r=>{
+      const drams=(r.storage_chips||[]).map(c=>c.yyyyww).filter(Boolean);
+      return '<div style="padding:4px 0;border-top:1px solid #eee;font-size:13px">'+
+        esc(r.created_at||'')+'　'+verdictTag(r.verdict)+'　主控 '+esc(r.controller_date||'—')+
+        '　PCB '+esc(r.pcb_date||'—')+'　颗粒 '+r.storage_count+
+        '　耗时 '+sec(r.elapsed_sec||(r.timing||{}).total)+'　Token '+((r.token_usage||{}).total_tokens||0)+
+        '　二维码 '+esc((r.label_data||{}).raw||'未识别')+
+        (r.batch_no?('　批次 '+esc(r.batch_no)):'')+'</div>';
+    }).join('');
+    box.innerHTML=banner+'<div style="margin-top:6px">'+rows+'</div>';
+  }catch(e){box.innerHTML='<div class="empty">查询失败：'+esc(e.message)+'</div>';}
+}
+function imgLinks(r){
+  const L=[];
+  if(r.annotated_front)L.push(`<a class="btn-xs" href="${r.annotated_front}" target="_blank">正面图</a>`);
+  if(r.annotated_back)L.push(`<a class="btn-xs" href="${r.annotated_back}" target="_blank">背面图</a>`);
+  return L.join('');
+}
+async function setReview(id,status){
+  const fd=new FormData();fd.append('status',status);fd.append('operator','管理员');
+  try{const d=await(await fetch('/api/records/'+id+'/review',{method:'POST',body:fd})).json();if(!d.ok)alert('更新失败');}catch(e){alert(e.message)}
+}
+function renderRecords(){
+  const box=$('rec-body');
+  const list=allRecords.filter(recMatch);
+  $('rec-count').textContent=list.length;
+  if(!list.length){box.innerHTML='<div class="empty">无匹配记录</div>';return;}
+  const opts=['未复查','复查合格','复查不合格'];
+  box.innerHTML=list.map(r=>{
+    const thumb=r.annotated_front?`<img class="thumb" src="${r.annotated_front}" onclick="window.open('${r.annotated_front}','_blank')" style="cursor:zoom-in">`:'';
+    return `<div class="item">
+    <div class="row1">
+      ${thumb}
+      <div class="main">
+        <div class="spec">${esc(r.brand)||'?'} ${esc(r.capacity)||''} / ${esc(r.frequency)||''}
+          ${r.cond?`<span class="tag new">${esc(r.cond)}</span>`:''}
+          ${verdictTag(r.verdict)} ${r.batch_no?`<span class="tag amber">${esc(r.batch_no)}</span>`:''}${r.slot_pos?`<span class="tag">托盘第${r.slot_pos}槽</span>`:''}</div>
+        <div class="meta"><span>SN ${esc(r.sn)||'—'}</span><span>客户 ${esc(r.customer)||'—'}</span>
+          <span>颗粒 ${r.storage_count}</span><span>耗时 ${sec(r.elapsed_sec||(r.timing||{}).total)}</span><span>Token ${(r.token_usage||{}).total_tokens||0}</span><span>${esc(r.created_at||'')}</span><span>${esc(r.operator)||''}</span>${r.remark?`<span>来源 ${esc(r.remark)}</span>`:''}</div>
+        ${r.fail_desc?`<div class="note" style="color:var(--red)">${esc(r.fail_desc)}</div>`:''}
+        ${detailBlock(r)}
+      </div>
+    </div>
+    <div class="acts">
+      ${imgLinks(r)}
+      <select class="btn-xs" onchange="setReview(${r.id},this.value)">${opts.map(o=>`<option${o===r.review_status?' selected':''}>${o}</option>`).join('')}</select>
+    </div></div>`;}).join('');
+}
+
+['f-customer','f-batch','f-verdict','f-from','f-to'].forEach(id=>$(id).onchange=renderRecords);
+$('f-kw').oninput=renderRecords;
+
+async function refreshAll(){
+  await Promise.all([loadBatches(), loadRecords()]);
+  await loadKpis();
+  $('lastup').textContent='最近更新 '+new Date().toLocaleTimeString('zh-CN',{hour12:false});
+}
+refreshAll();
+setInterval(refreshAll, 10000);
+</script>
+</body>
+</html>

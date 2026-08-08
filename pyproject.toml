@@ -1,0 +1,14 @@
+[project]
+name = "aipaddle"
+version = "0.1.0"
+description = "云小圈 AI 硬件质检系统"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

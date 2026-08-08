@@ -1,0 +1,43 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Secrets —— 含数据库口令、大模型 API Key，绝不能进版本库
+.env
+
+# 运行时产物（跑一次就重新生成，且体积巨大）
+# archive 2.7GB / logs 228MB / uploads 216MB —— 全是每次质检落盘的原图和标注图。
+# 提交会让仓库瞬间膨胀到 GB 级，clone 极慢，而这些数据对别人毫无价值。
+# 另外这些是**真实产线照片**，可能含客户 SN 和批次信息，不该公开。
+/server.log
+/logs/
+/outputs/
+/uploads/
+/archive/
+/.runtime/
+
+# 测试图与原型脚本产物（单张 bmp 就 35MB）
+/test_photos/
+/_proto_out/
+/_t_out/
+
+# 根目录的临时调试残留（_diag*.txt / _frame_*.png / image.png 等）
+/_*.txt
+/_*.png
+/_*.py
+/image.png
+
+# tools/ 下带下划线前缀的是一次性排查脚本，不是项目代码
+/tools/_*.py
+
+# OCR 模型（166MB，det 85MB + rec 82MB）
+# 超出 GitHub 建议体积。换机部署时另行拷贝，或改用 Git LFS。
+# 缺失时 ocr_engine._model_dir() 会回退 ~/.paddlex 缓存并联网下载。
+/models/

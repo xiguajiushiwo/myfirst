@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>采购订单 · 云小圈AI硬件质检系统</title>
+<link rel="icon" href="/favicon.png">
+<style>
+:root{
+  --ink:#1d2330; --dim:#667085; --faint:#98a2b3;
+  --orange:#fc8615; --blue:#0a5cd5; --green:#0f9d58; --red:#d93025;
+  --line:rgba(20,40,80,.11); --panel:rgba(255,255,255,.76);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;color:var(--ink);min-height:100vh;
+  font:15px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;overflow-x:hidden;
+  background:
+    radial-gradient(900px 560px at 8% 5%, rgba(252,134,21,.13), transparent 58%),
+    radial-gradient(900px 600px at 96% 86%, rgba(10,92,213,.15), transparent 60%),
+    linear-gradient(135deg,#eef1fb 0%,#e8eefc 44%,#f4edf9 100%);
+}
+.top{display:flex;align-items:center;gap:12px;padding:18px 40px}
+.top img{height:48px;width:auto;object-fit:contain}
+.top .name{font-size:18px;font-weight:800;letter-spacing:.5px}
+.top .sp{flex:1}
+.top a,.top button{font:inherit;font-size:13.5px;font-weight:600;text-decoration:none;
+  border:1px solid var(--line);background:#fff;color:var(--dim);padding:8px 15px;border-radius:999px;cursor:pointer;transition:.15s;margin-left:8px}
+.top a:hover,.top button:hover{border-color:var(--blue);color:var(--blue)}
+.main{max-width:1440px;margin:0 auto;padding:18px 34px 54px}
+.steps{display:flex;align-items:center;background:var(--panel);border:1px solid rgba(255,255,255,.9);
+  border-radius:16px;padding:14px 24px;margin-bottom:18px;box-shadow:0 12px 30px rgba(30,60,120,.08);
+  backdrop-filter:blur(10px);overflow-x:auto}
+.steps a{display:flex;align-items:center;gap:11px;text-decoration:none;color:var(--faint);white-space:nowrap}
+.steps .dot{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-size:14px;font-weight:800;
+  border:2px solid currentColor;flex:none}
+.steps .txt{display:flex;flex-direction:column;line-height:1.25}
+.steps .lbl{font-size:14.5px;font-weight:800}
+.steps .sub2{font-size:11px;font-weight:600;opacity:.82}
+.steps .line{flex:1;min-width:26px;height:2px;background:var(--line);margin:0 16px;border-radius:2px}
+.steps a.done{color:var(--green)}
+.steps a.done .dot{background:var(--green);border-color:var(--green);color:#fff}
+.steps a.cur{color:var(--blue)}
+.steps a.cur .dot{background:var(--blue);border-color:var(--blue);color:#fff;box-shadow:0 0 0 4px rgba(10,92,213,.16)}
+.head{display:flex;align-items:flex-end;gap:16px;margin:8px 0 16px}
+.head h1{margin:0;font-size:30px;line-height:1.1;font-weight:900;letter-spacing:0}
+.head .hint{color:var(--dim);font-size:13px;margin-top:7px}
+.head .sp{flex:1}
+.btn{font:inherit;font-size:14px;font-weight:800;border:none;border-radius:12px;padding:11px 18px;cursor:pointer;transition:.15s;white-space:nowrap}
+.btn.pull{color:#fff;background:linear-gradient(135deg,#0a5cd5,#3f86ff);box-shadow:0 10px 24px rgba(10,92,213,.28)}
+.btn.pull:hover{transform:translateY(-1px);box-shadow:0 14px 30px rgba(10,92,213,.34)}
+.btn.new{color:var(--blue);background:#fff;border:1px solid rgba(10,92,213,.28)}
+.btn.new:hover{background:rgba(10,92,213,.06)}
+.toolbar{display:grid;grid-template-columns:minmax(240px,1.2fr) 190px 180px 110px 110px 150px 130px 130px;gap:12px;align-items:end;
+  background:var(--panel);border:1px solid rgba(255,255,255,.9);border-radius:16px;padding:16px;
+  box-shadow:0 12px 30px rgba(30,60,120,.08);backdrop-filter:blur(10px);margin-bottom:14px}
+.field{display:flex;flex-direction:column;gap:5px}
+.field span{font-size:12px;color:var(--dim);font-weight:700}
+.field input,.field select{height:40px;border:1px solid var(--line);background:#fbfdff;border-radius:10px;padding:0 12px;font:inherit;color:var(--ink)}
+.field input:focus,.field select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(10,92,213,.12);background:#fff}
+.toolbar-bottom{grid-column:1/-1;display:flex;align-items:end;justify-content:space-between;gap:12px;padding-top:12px;border-top:1px solid rgba(20,40,80,.08)}
+.sort-pair{display:grid;grid-template-columns:170px 190px;gap:10px}
+.tool-actions{display:flex;gap:8px;align-items:end;justify-content:flex-end}
+.mini-btn{height:40px;border:1px solid var(--line);background:#fff;color:var(--dim);border-radius:10px;padding:0 12px;font:inherit;font-size:13px;font-weight:800;cursor:pointer}
+.mini-btn:hover{border-color:var(--blue);color:var(--blue);background:rgba(10,92,213,.05)}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;align-items:end}
+.tab{height:40px;border:1px solid var(--line);background:#fff;color:var(--dim);border-radius:999px;padding:0 13px;font:inherit;font-size:13px;font-weight:800;cursor:pointer}
+.tab.on{background:var(--blue);border-color:var(--blue);color:#fff}
+.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+.metric{background:rgba(255,255,255,.72);border:1px solid rgba(255,255,255,.9);border-radius:14px;padding:13px 16px;box-shadow:0 10px 24px rgba(30,60,120,.07)}
+.metric .k{font-size:12px;color:var(--dim);font-weight:800}
+.metric .v{font-size:24px;font-weight:900;line-height:1.2;margin-top:3px}
+.metric .v.blue{color:var(--blue)}.metric .v.green{color:var(--green)}.metric .v.red{color:var(--red)}
+.groups{display:flex;flex-direction:column;gap:12px}
+.group{background:rgba(255,255,255,.76);border:1px solid rgba(255,255,255,.92);border-radius:16px;overflow:hidden;
+  box-shadow:0 14px 34px rgba(30,60,120,.09);backdrop-filter:blur(10px)}
+.ghead{display:flex;align-items:center;gap:12px;padding:13px 16px;background:rgba(10,92,213,.055);border-bottom:1px solid var(--line)}
+.gkind{font-size:11px;font-weight:900;color:var(--blue);background:rgba(10,92,213,.1);border-radius:999px;padding:3px 8px;white-space:nowrap}
+.gtitle{font-size:15px;font-weight:900;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gmeta{font-size:12px;color:var(--dim);font-weight:800;white-space:nowrap}
+.ghead .sp{flex:1}
+.order-row{display:grid;grid-template-columns:minmax(190px,.92fr) minmax(230px,1.2fr) 270px 210px 170px;
+  gap:14px;align-items:center;padding:14px 16px;border-bottom:1px solid rgba(20,40,80,.075)}
+.order-row:last-child{border-bottom:none}
+.order-row.cur{background:rgba(15,157,88,.055);box-shadow:inset 4px 0 0 var(--green)}
+.line-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.current-flag{font-size:11px;font-weight:900;color:var(--green);background:rgba(15,157,88,.12);border:1px solid rgba(15,157,88,.18);border-radius:999px;padding:2px 8px;white-space:nowrap}
+.no{font-size:15px;font-weight:900;word-break:break-all}
+.sub{font-size:12px;color:var(--dim);font-weight:650;margin-top:3px}
+.mat{font-weight:850;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.specs{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.pill{font-size:11.5px;font-weight:850;color:var(--blue);background:rgba(10,92,213,.1);border-radius:999px;padding:2px 8px}
+.pill.miss{color:var(--faint);background:rgba(102,112,133,.1)}
+.qtybox{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.q{background:#f7f9fd;border:1px solid rgba(20,40,80,.08);border-radius:10px;padding:7px 8px;text-align:center}
+.q span{display:block;font-size:11px;color:var(--dim);font-weight:800}
+.q b{display:block;font-size:18px;line-height:1.15;margin-top:2px}
+.q.todo b{color:var(--red)}.q.done b{color:var(--green)}
+.biz{font-size:13px;color:var(--dim);display:grid;gap:3px}
+.biz-line{display:grid;grid-template-columns:62px minmax(0,1fr);gap:4px;align-items:baseline}
+.biz-line .lbl{color:var(--faint);font-weight:850;text-align:right}
+.biz-line b{color:var(--ink);font-weight:800;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.actions{display:flex;gap:8px;justify-content:flex-end}
+.start,.detail,.close{height:38px;border-radius:10px;border:none;font:inherit;font-size:13px;font-weight:850;cursor:pointer;transition:.15s}
+.start{background:var(--blue);color:#fff;padding:0 14px}.start:hover{background:#0950bb}
+.start.iscur{background:var(--green)}
+.detail{background:#eef3fb;color:var(--blue);padding:0 11px}
+.close{background:#f2f4f7;color:var(--dim);padding:0 10px}.close:hover{color:var(--red)}
+.detail-row{display:none;grid-column:1/-1;background:#fbfcff;border:1px solid rgba(20,40,80,.08);border-radius:12px;padding:12px;margin-top:8px}
+.detail-row.on{display:block}
+.detail-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px 14px}
+.kv .k{font-size:11.5px;color:var(--faint);font-weight:800}.kv .v{font-size:13px;font-weight:750;word-break:break-all}
+.empty{text-align:center;color:var(--faint);padding:58px 0;font-size:15px;background:rgba(255,255,255,.62);border-radius:16px;border:1px solid rgba(255,255,255,.85)}
+.mask{position:fixed;inset:0;z-index:40;background:rgba(20,30,55,.4);display:none;align-items:center;justify-content:center;padding:20px}
+.mask.on{display:flex}
+.dlg{background:#fff;border-radius:18px;padding:26px 28px;width:560px;max-width:100%;max-height:90vh;overflow:auto;box-shadow:0 30px 70px rgba(20,40,80,.3)}
+.dlg h2{margin:0 0 16px;font-size:20px;font-weight:800}
+.dlg .fg{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.dlg label{font-size:12px;color:var(--dim);display:flex;flex-direction:column;gap:5px}
+.dlg input,.dlg select{padding:9px 11px;border:1px solid var(--line);border-radius:9px;font:inherit;background:#fbfdff}
+.dlg input:focus,.dlg select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(10,92,213,.12);background:#fff}
+.dlg .foot{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}
+#toast{position:fixed;left:50%;bottom:36px;transform:translateX(-50%) translateY(20px);
+  z-index:60;background:#1d2330;color:#fff;font-size:14px;padding:12px 22px;border-radius:12px;
+  box-shadow:0 12px 34px rgba(0,0,0,.28);opacity:0;pointer-events:none;transition:.25s;max-width:80vw}
+#toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+@media(max-width:1050px){
+  .toolbar{grid-template-columns:1fr 1fr}.toolbar-bottom{align-items:flex-start;flex-direction:column}.sort-pair{grid-template-columns:1fr 1fr}.summary{grid-template-columns:repeat(2,1fr)}
+  .order-row{grid-template-columns:1fr}.actions{justify-content:flex-start}.detail-grid{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:640px){
+  .top{padding:14px 18px;flex-wrap:wrap}.main{padding:12px 16px 40px}.head{align-items:flex-start;flex-direction:column}
+  .toolbar,.sort-pair{grid-template-columns:1fr}.summary{grid-template-columns:1fr}.detail-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div class="top">
+  <img src="/logo_hd.png" onerror="this.src='/logo.png'" alt="云小圈">
+  <span class="name">云小圈 · AI 硬件质检系统</span>
+  <span class="sp"></span>
+  <a href="/">首页</a>
+  <a href="/workbench">质检工作台</a>
+  <a href="/manage">看板</a>
+  <button id="logout">退出登录</button>
+</div>
+
+<div class="main">
+  <div class="steps" id="stepbar" data-step="1"></div>
+  <div class="head">
+    <div>
+      <h1>选择采购订单</h1>
+      <div class="hint">只显示内存条采购订单；应检数量 = 金蝶已入库数量。</div>
+    </div>
+    <span class="sp"></span>
+    <button class="btn new" id="new-order">手工登记</button>
+    <button class="btn pull" id="pull-order" title="后台每15分钟自动同步；点击可立即增量同步">立即同步</button>
+  </div>
+
+  <div class="toolbar">
+    <label class="field"><span>关键词</span><input id="kw" placeholder="订单号 / 供应商编码 / 销售单 / 备注"></label>
+    <label class="field"><span>供应商</span><select id="supplier-filter"><option value="">全部供应商</option></select></label>
+    <label class="field"><span>物料</span><input id="material-filter" placeholder="三星 / 海力士 / 1026"></label>
+    <label class="field"><span>容量</span><select id="capacity-filter"><option value="">全部容量</option></select></label>
+    <label class="field"><span>频率</span><select id="frequency-filter"><option value="">全部频率</option></select></label>
+    <label class="field"><span>业务员</span><select id="operator-filter"><option value="">全部业务员</option></select></label>
+    <label class="field"><span>交期从</span><input id="date-from" type="date"></label>
+    <label class="field"><span>交期到</span><input id="date-to" type="date"></label>
+    <div class="toolbar-bottom">
+      <div class="tabs" id="tabs">
+        <button class="tab on" data-mode="todo" title="已入库且还有待检数量">待检</button>
+        <button class="tab" data-mode="in_progress" title="已经开始检测但未检完">在检</button>
+        <button class="tab" data-mode="done" title="应检数量已经检完">已完成</button>
+        <button class="tab" data-mode="all">全部</button>
+      </div>
+      <div class="sort-pair">
+        <label class="field"><span>分组</span><select id="group-by">
+          <option value="supplier">按供应商</option>
+          <option value="date">按交期</option>
+          <option value="operator">按业务员</option>
+          <option value="material">按物料</option>
+          <option value="capacity">按容量</option>
+          <option value="frequency">按频率</option>
+          <option value="status">按状态</option>
+        </select></label>
+        <label class="field"><span>排序</span><select id="sorter">
+          <option value="todo">待检优先</option>
+          <option value="todo_desc">待检最多</option>
+          <option value="supplier">供应商 A-Z</option>
+          <option value="date_desc">交期最新</option>
+          <option value="date_asc">交期最早</option>
+          <option value="stock">已入库最多</option>
+          <option value="capacity">容量</option>
+          <option value="frequency">频率</option>
+          <option value="checked">已检最多</option>
+          <option value="order_desc">订单号倒序</option>
+          <option value="order_asc">订单号正序</option>
+          <option value="operator">业务员 A-Z</option>
+        </select></label>
+      </div>
+      <div class="tool-actions">
+        <button class="mini-btn" id="clear-filters">清空筛选</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="summary">
+    <div class="metric"><div class="k">当前显示</div><div class="v blue" id="m-count">0</div></div>
+    <div class="metric"><div class="k">待检数量</div><div class="v red" id="m-todo">0</div></div>
+    <div class="metric"><div class="k">已检数量</div><div class="v green" id="m-done">0</div></div>
+    <div class="metric"><div class="k">供应商数</div><div class="v" id="m-supplier">0</div></div>
+  </div>
+
+  <div class="groups" id="groups"><div class="empty">加载中...</div></div>
+</div>
+
+<div class="mask" id="mask">
+  <div class="dlg">
+    <h2>手工登记采购订单</h2>
+    <div class="fg">
+      <label>订单号<input id="f-no" placeholder="PO-2026-001"></label>
+      <label>客户<input id="f-customer" placeholder="客户名"></label>
+      <label>供应商<input id="f-supplier" placeholder="供应商名"></label>
+      <label>品牌<input id="f-brand" placeholder="Samsung"></label>
+      <label>型号<input id="f-model" placeholder="M321R"></label>
+      <label>容量<input id="f-capacity" placeholder="64GB"></label>
+      <label>频率<input id="f-frequency" placeholder="DDR5-4800"></label>
+      <label>应检数量<input id="f-qty" type="number" min="0" placeholder="0=不限"></label>
+      <label>交期<input id="f-delivery" type="date"></label>
+      <label>品相<select id="f-cond"><option value="">选择</option><option>拆机</option><option>拆新</option><option>全新</option></select></label>
+      <label style="grid-column:1/3">备注<input id="f-remark" placeholder="香港货 / 马来货"></label>
+    </div>
+    <div class="foot">
+      <button class="btn new" id="dlg-cancel">取消</button>
+      <button class="btn pull" id="dlg-save" style="box-shadow:none">保存订单</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const $=id=>document.getElementById(id);
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+let _tt, orders=[], mode='todo', openDetail=new Set();
+function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('on');clearTimeout(_tt);_tt=setTimeout(()=>t.classList.remove('on'),3200);}
+function n(v){return Number(v||0)}
+function fmtQty(v){const x=n(v);return Number.isInteger(x)?String(x):x.toFixed(2)}
+function dash(v){return esc(v)||'—'}
+function normCapacity(v){const s=String(v||'').trim();const m=s.match(/^(\d+)\s*(?:G|GB)$/i);return m?`${m[1]}GB`:s}
+function frequencyTokens(v){
+  const matches=String(v||'').toUpperCase().match(/\d{4,5}/g)||[];
+  return [...new Set(matches.map(x=>String(Number(x))).filter(x=>Number(x)>=1600&&Number(x)<=10000))];
+}
+function normFrequency(v){return frequencyTokens(v).join('、')}
+function frequencySortValue(v){const values=frequencyTokens(v).map(Number);return values.length?Math.min(...values):Number.MAX_SAFE_INTEGER}
+function curId(){return localStorage.getItem('batch_id')||'';}
+function kdStatus(v){return ({A:'暂存',B:'提交',C:'已审核',D:'重新审核'}[v]||v||'—')}
+function closeStatus(v){return ({A:'正常',B:'已关闭'}[v]||v||'—')}
+function money(v){const x=n(v);return x?('¥'+x.toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2})):'—'}
+function todoOf(b){return Math.max(0,n(b.qty_expected)-n(b.total))}
+function isMemoryOrder(b){
+  const text=[b.model,b.brand,b.capacity,b.frequency,b.kd_specification,b.kd_material_number,b.remark].map(x=>String(x||'').toLowerCase()).join(' ');
+  if(/中央处理器|处理器|cpu|网卡|network card|nic/.test(text))return false;
+  if(/内存|ddr|pc4|pc5|rdimm|udimm|sodimm/.test(text))return true;
+  if(b.capacity||b.frequency)return true;
+  return false;
+}
+
+function renderStepBar(){
+  const bar=$('stepbar');if(!bar)return;
+  const hasOrder=!!(localStorage.getItem('batch_id')||'').trim();
+  const steps=[
+    {n:1,href:'/orders',lbl:'选择采购订单',sub:'按已入库数量开检',done:hasOrder},
+    {n:2,href:'/workbench',lbl:'开始质检',sub:'逐根判定合格',done:false},
+  ];
+  bar.innerHTML=steps.map((s,i)=>{
+    const cur=s.n===1, cls=cur?'cur':(s.done?'done':''), mark=(s.done&&!cur)?'✓':s.n;
+    const line=i<steps.length-1?'<span class="line"></span>':'';
+    return `<a class="${cls}" href="${s.href}"><span class="dot">${mark}</span><span class="txt"><span class="lbl">${s.lbl}</span><span class="sub2">${s.sub}</span></span></a>${line}`;
+  }).join('');
+}
+
+function refreshSupplierFilter(){
+  const sel=$('supplier-filter'), old=sel.value;
+  const names=[...new Set(orders.map(o=>o.supplier).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'zh-CN'));
+  sel.innerHTML='<option value="">全部供应商</option>'+names.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');
+  sel.value=names.includes(old)?old:'';
+  const op=$('operator-filter'), oldOp=op.value;
+  const ops=[...new Set(orders.map(o=>o.kd_operator).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'zh-CN'));
+  op.innerHTML='<option value="">全部业务员</option>'+ops.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');
+  op.value=ops.includes(oldOp)?oldOp:'';
+  const cap=$('capacity-filter'), oldCap=cap.value;
+  const caps=[...new Set(orders.map(o=>normCapacity(o.capacity)).filter(Boolean))].sort((a,b)=>n(a)-n(b) || String(a).localeCompare(String(b),'zh-CN'));
+  cap.innerHTML='<option value="">全部容量</option>'+caps.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');
+  cap.value=caps.includes(oldCap)?oldCap:'';
+  const freq=$('frequency-filter'), oldFreq=freq.value;
+  const freqs=[...new Set(orders.flatMap(o=>frequencyTokens(o.frequency)))].sort((a,b)=>Number(a)-Number(b));
+  freq.innerHTML='<option value="">全部频率</option>'+freqs.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');
+  freq.value=freqs.includes(oldFreq)?oldFreq:'';
+}
+
+function matchMode(b){
+  const todo=todoOf(b);
+  if(mode==='todo')return b.active && n(b.qty_expected)>0 && todo>0;
+  if(mode==='in_progress')return b.active && n(b.total)>0 && todo>0;
+  if(mode==='done')return n(b.qty_expected)>0 && todo===0;
+  return true;
+}
+function filtered(){
+  const kw=$('kw').value.trim().toLowerCase();
+  const sup=$('supplier-filter').value;
+  const material=$('material-filter').value.trim().toLowerCase();
+  const cap=$('capacity-filter').value;
+  const freq=$('frequency-filter').value;
+  const operator=$('operator-filter').value;
+  const dateFrom=$('date-from').value;
+  const dateTo=$('date-to').value;
+  const words=kw.split(/[\s,，]+/).filter(Boolean);
+  const contains=(value,needle)=>String(value||'').toLowerCase().includes(needle);
+  const fields=(b)=>[
+    b.batch_no,b.supplier,b.model,b.kd_material_number,b.kd_operator,b.kd_supplier_number,
+    b.delivery_date,b.kd_supplier_status,b.kd_src_bill_no,b.remark,b.brand,b.capacity,b.frequency,b.kd_specification
+  ];
+  let list=orders.filter(b=>{
+    if(!isMemoryOrder(b))return false;
+    if(sup && b.supplier!==sup)return false;
+    if(operator && b.kd_operator!==operator)return false;
+    if(cap && normCapacity(b.capacity)!==cap)return false;
+    if(freq && !frequencyTokens(b.frequency).includes(freq))return false;
+    if(material && ![b.model,b.kd_material_number,b.brand,b.capacity,b.frequency,b.kd_specification].some(v=>contains(v,material)))return false;
+    if(dateFrom && String(b.delivery_date||'')<dateFrom)return false;
+    if(dateTo && String(b.delivery_date||'')>dateTo)return false;
+    if(!matchMode(b))return false;
+    if(!words.length)return true;
+    const hay=fields(b).map(x=>String(x||'').toLowerCase()).join(' ');
+    return words.every(w=>hay.includes(w));
+  });
+  const sort=$('sorter').value;
+  list.sort((a,b)=>{
+    if(sort==='todo_desc')return todoOf(b)-todoOf(a) || String(b.delivery_date||'').localeCompare(String(a.delivery_date||''));
+    if(sort==='supplier')return String(a.supplier||'').localeCompare(String(b.supplier||''),'zh-CN') || String(b.delivery_date||'').localeCompare(String(a.delivery_date||''));
+    if(sort==='date_desc')return String(b.delivery_date||'').localeCompare(String(a.delivery_date||''));
+    if(sort==='date_asc')return String(a.delivery_date||'').localeCompare(String(b.delivery_date||''));
+    if(sort==='stock')return n(b.kd_in_stock_qty)-n(a.kd_in_stock_qty);
+    if(sort==='capacity')return n(normCapacity(a.capacity))-n(normCapacity(b.capacity)) || String(normCapacity(a.capacity)||'').localeCompare(String(normCapacity(b.capacity)||''),'zh-CN');
+    if(sort==='frequency')return frequencySortValue(a.frequency)-frequencySortValue(b.frequency) || normFrequency(a.frequency).localeCompare(normFrequency(b.frequency),'zh-CN');
+    if(sort==='checked')return n(b.total)-n(a.total);
+    if(sort==='order_desc')return String(b.batch_no||'').localeCompare(String(a.batch_no||''));
+    if(sort==='order_asc')return String(a.batch_no||'').localeCompare(String(b.batch_no||''));
+    if(sort==='operator')return String(a.kd_operator||'').localeCompare(String(b.kd_operator||''),'zh-CN') || String(b.delivery_date||'').localeCompare(String(a.delivery_date||''));
+    return todoOf(b)-todoOf(a) || String(b.delivery_date||'').localeCompare(String(a.delivery_date||''));
+  });
+  return list;
+}
+
+function row(b){
+  const cur=String(b.id)===curId(), todo=todoOf(b), detail=openDetail.has(String(b.id));
+  return `<div class="order-row${cur?' cur':''}">
+    <div>
+      <div class="line-title"><div class="no">${dash(b.batch_no)||'#'+b.id}</div>${cur?'<span class="current-flag">当前质检订单</span>':''}</div>
+      <div class="sub">${b.oa_synced?'金蝶':'手工'} · ${dash(kdStatus(b.kd_bill_status))} · ${dash(closeStatus(b.kd_close_status))}</div>
+    </div>
+    <div>
+      <div class="mat">${dash(b.model)}</div>
+      <div class="specs">
+        <span class="pill${b.capacity?'':' miss'}">容量 ${dash(normCapacity(b.capacity))}</span>
+        <span class="pill${b.frequency?'':' miss'}">频率 ${dash(normFrequency(b.frequency))}</span>
+        <span class="pill${b.kd_specification?'':' miss'}">规格 ${dash(b.kd_specification)}</span>
+        <span class="pill">物料 ${dash(b.kd_material_number)}</span>
+      </div>
+    </div>
+    <div class="qtybox">
+      <div class="q"><span>已入库</span><b>${fmtQty(b.kd_in_stock_qty||b.qty_expected)}</b></div>
+      <div class="q done"><span>已检</span><b>${fmtQty(b.total)}</b></div>
+      <div class="q todo"><span>待检</span><b>${fmtQty(todo)}</b></div>
+    </div>
+    <div class="biz">
+      <div class="biz-line"><span class="lbl">供应商</span><b title="${esc(b.supplier||'')}">${dash(b.supplier)}</b></div>
+      <div class="biz-line"><span class="lbl">交期</span><b>${dash(b.delivery_date)}</b></div>
+      <div class="biz-line"><span class="lbl">业务员</span><b title="${esc(b.kd_operator||'')}">${dash(b.kd_operator)}</b></div>
+      <div class="biz-line"><span class="lbl">状态</span><b>${dash(b.kd_supplier_status)}</b></div>
+    </div>
+    <div class="actions">
+      <button class="start${cur?' iscur':''}" onclick="startQC(${b.id})">${cur?'继续质检':'选择'}</button>
+      <button class="detail" onclick="toggleDetail(${b.id})">${detail?'收起':'详情'}</button>
+      ${b.active?`<button class="close" onclick="closeOrder(${b.id})">结单</button>`:''}
+    </div>
+    <div class="detail-row${detail?' on':''}">
+      <div class="detail-grid">
+        ${kv('供应商编码',b.kd_supplier_number)}
+        ${kv('源销售单',b.kd_src_bill_no)}
+        ${kv('金蝶规格型号',b.kd_specification)}
+        ${kv('已收货',fmtQty(b.kd_received_qty))}
+        ${kv('已退货',fmtQty(b.kd_return_qty))}
+        ${kv('价税合计',money(b.kd_total_all_amount))}
+        ${kv('未税金额',money(b.kd_total_amount))}
+        ${kv('税额',money(b.kd_tax_amount))}
+        ${kv('来源/备注',b.remark)}
+      </div>
+    </div>
+  </div>`;
+}
+function kv(k,v){return `<div class="kv"><div class="k">${k}</div><div class="v">${dash(v)}</div></div>`}
+
+function groupKey(b){
+  const by=$('group-by').value;
+  if(by==='date')return b.delivery_date || '未填交期';
+  if(by==='operator')return b.kd_operator || '未填业务员';
+  if(by==='material')return b.model || b.kd_material_number || '未填物料';
+  if(by==='capacity')return b.capacity || '未填容量';
+  if(by==='frequency')return normFrequency(b.frequency) || '未填频率';
+  if(by==='status')return `${kdStatus(b.kd_bill_status)} / ${closeStatus(b.kd_close_status)}`;
+  return b.supplier || '未填供应商';
+}
+
+function groupKindLabel(){
+  return ({supplier:'供应商',date:'交期',operator:'业务员',material:'物料',capacity:'容量',frequency:'频率',status:'状态'}[$('group-by').value] || '分组');
+}
+
+function render(){
+  const list=filtered();
+  $('m-count').textContent=list.length;
+  $('m-todo').textContent=fmtQty(list.reduce((s,b)=>s+todoOf(b),0));
+  $('m-done').textContent=fmtQty(list.reduce((s,b)=>s+n(b.total),0));
+  $('m-supplier').textContent=new Set(list.map(b=>b.supplier).filter(Boolean)).size;
+  if(!list.length){$('groups').innerHTML='<div class="empty">没有符合条件的订单。可以换筛选条件，或点击“从金蝶拉取”。</div>';return;}
+  const groups=new Map();
+  for(const b of list){
+    const key=groupKey(b);
+    if(!groups.has(key))groups.set(key,[]);
+    groups.get(key).push(b);
+  }
+  const entries=[...groups.entries()];
+  const groupBy=$('group-by').value;
+  if(groupBy==='supplier' || groupBy==='operator' || groupBy==='material'){
+    entries.sort((a,b)=>String(a[0]||'').localeCompare(String(b[0]||''),'zh-CN'));
+  }else if(groupBy==='date'){
+    entries.sort((a,b)=>String(b[0]||'').localeCompare(String(a[0]||'')));
+  }
+  $('groups').innerHTML=entries.map(([name,items])=>{
+    if(groupBy==='supplier'){
+      items.sort((a,b)=>String(b.delivery_date||'').localeCompare(String(a.delivery_date||'')) || String(b.batch_no||'').localeCompare(String(a.batch_no||'')));
+    }
+    const todo=items.reduce((s,b)=>s+todoOf(b),0), stock=items.reduce((s,b)=>s+n(b.kd_in_stock_qty||b.qty_expected),0);
+    return `<section class="group">
+      <div class="ghead"><span class="gkind">${groupKindLabel()}</span><div class="gtitle">${dash(name)}</div><div class="gmeta">${items.length} 张订单</div><div class="gmeta">已入库 ${fmtQty(stock)}</div><div class="gmeta">待检 ${fmtQty(todo)}</div><span class="sp"></span></div>
+      ${items.map(row).join('')}
+    </section>`;
+  }).join('');
+}
+
+async function load(){
+  try{orders=(await(await fetch('/api/orders?limit=500')).json()).batches||[];}
+  catch(e){orders=[];toast('订单加载失败：'+e.message);}
+  refreshSupplierFilter();
+  render();
+}
+
+function startQC(id){
+  const b=orders.find(o=>String(o.id)===String(id));
+  if(!b){toast('订单不存在');return;}
+  localStorage.setItem('batch_id',String(id));
+  localStorage.setItem('batch_no',b.batch_no||('#'+id));
+  toast('已选择 '+(b.batch_no||'#'+id));
+  setTimeout(()=>location.href='/workbench',360);
+}
+function toggleDetail(id){
+  const key=String(id);
+  if(openDetail.has(key))openDetail.delete(key);else openDetail.add(key);
+  render();
+}
+async function closeOrder(id){
+  if(!confirm('结束该订单？结单后不会进入“在检”筛选。'))return;
+  try{
+    const d=await(await fetch('/api/orders/'+id+'/close',{method:'POST'})).json();
+    if(!d.ok)throw new Error(d.error||'结单失败');
+    if(String(id)===curId())localStorage.removeItem('batch_id');
+    toast('已结单');await load();
+  }catch(e){toast('结单失败：'+e.message);}
+}
+
+$('logout').onclick=async()=>{await fetch('/api/logout',{method:'POST'});location.href='/login';};
+['kw','material-filter','date-from','date-to'].forEach(id=>$(id).oninput=render);
+['supplier-filter','capacity-filter','frequency-filter','operator-filter','group-by','sorter'].forEach(id=>$(id).onchange=render);
+$('clear-filters').onclick=()=>{
+  ['kw','material-filter','date-from','date-to'].forEach(id=>$(id).value='');
+  $('supplier-filter').value='';
+  $('capacity-filter').value='';
+  $('frequency-filter').value='';
+  $('operator-filter').value='';
+  $('group-by').value='supplier';
+  $('sorter').value='todo';
+  render();
+};
+$('tabs').onclick=e=>{
+  const btn=e.target.closest('.tab');if(!btn)return;
+  mode=btn.dataset.mode;
+  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===btn));
+  render();
+};
+$('pull-order').onclick=async(ev)=>{
+  const btn=ev.currentTarget;if(btn.dataset.busy)return;btn.dataset.busy='1';
+  const old=btn.textContent;btn.textContent='拉取中...';
+  try{
+    const fd=new FormData();fd.append('force','true');
+    const d=await(await fetch('/api/orders/sync_kingdee',{method:'POST',body:fd})).json();
+    if(!d.ok)toast(d.error||'金蝶拉取失败');
+    else{toast('已从金蝶拉取 '+(d.imported||0)+' 张订单');await load();}
+  }catch(e){toast('拉取失败：'+e.message);}
+  finally{btn.dataset.busy='';btn.textContent=old;}
+};
+
+$('new-order').onclick=()=>$('mask').classList.add('on');
+$('dlg-cancel').onclick=()=>$('mask').classList.remove('on');
+$('mask').onclick=e=>{if(e.target===$('mask'))$('mask').classList.remove('on');};
+$('dlg-save').onclick=async(ev)=>{
+  const btn=ev.currentTarget;if(btn.dataset.busy)return;
+  const no=$('f-no').value.trim(), customer=$('f-customer').value.trim();
+  if(!no&&!customer){toast('至少填写订单号或客户');return;}
+  btn.dataset.busy='1';const old=btn.textContent;btn.textContent='保存中...';
+  const fd=new FormData();
+  fd.append('batch_no',no);fd.append('customer',customer);
+  fd.append('supplier',$('f-supplier').value.trim());
+  fd.append('brand',$('f-brand').value.trim());fd.append('model',$('f-model').value.trim());
+  fd.append('capacity',$('f-capacity').value.trim());fd.append('frequency',$('f-frequency').value.trim());
+  fd.append('qty_expected',$('f-qty').value||0);fd.append('delivery_date',$('f-delivery').value);
+  fd.append('cond',$('f-cond').value);fd.append('remark',$('f-remark').value.trim());
+  try{
+    const d=await(await fetch('/api/orders',{method:'POST',body:fd})).json();
+    if(!d.ok)throw new Error(d.error||'登记失败');
+    $('mask').classList.remove('on');
+    ['f-no','f-customer','f-supplier','f-brand','f-model','f-capacity','f-frequency','f-qty','f-delivery','f-remark'].forEach(i=>$(i).value='');
+    toast('已登记订单');await load();
+  }catch(e){toast('登记失败：'+e.message);}
+  finally{btn.dataset.busy='';btn.textContent=old;}
+};
+
+renderStepBar();
+load();
+setInterval(load,15000);
+</script>
+</body>
+</html>
