@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import datetime
 import os
+import re
 import shutil
 import time
 import uuid
@@ -25,26 +26,16 @@ from .recognition.geo_ocr import recognize_geo
 from .recognition.date_parser import summarize, to_yyyyww
 from .recognition.visualize import annotate_clean
 from .recognition.barcode import read_label_code
-from .inspection.quality_inspect import inspect_module, inspect_tray, read_label_vl
 
 
 def _read_label(front_path):
-    """读一根标签：**SN 只认二维码精确解**（zxing 带纠错，唯一可信来源）。
-
-    二维码解出 → 用其 SN/品牌/型号/规格（src='barcode'，精确）。
-    二维码解不出 → **SN 绝不采纳大模型猜测，留空待人工**；大模型只补 品牌/型号/频率
-    作参考（src='vl'、sn_unread=True），因为 SN 是追溯/去重/防偷换的主键，猜错代价极大。
-    """
+    """只用本地二维码解码读取标签；不调用多模态模型。"""
     if not front_path:
         return {}
     code = read_label_code(front_path)
     if code.get("sn"):
-        return code                                  # 二维码精确解，SN 可信
-    vl = read_label_vl(front_path) or {}
-    vl["sn"] = ""                                    # 二维码没解开 → SN 留空，不用大模型猜的
-    vl["sn_unread"] = True                           # 标记：SN 未能精确读出，需人工
-    vl["src"] = "vl"
-    return vl
+        return code
+    return {"sn": "", "sn_unread": True, "src": "barcode"}
 
 import datetime as _dt
 import logging
@@ -196,16 +187,16 @@ def _week_ordinal(c):
         return None
 
 
-# 几何模式（mode="geo"）下额外要算盲点的类型。
-# 颗粒任何模式都算（防偷换的核心，每一颗都要看清）。而 PCB/PMIC/SOT 只在几何模式算 ——
-# 几何模式对这三处**逐槽都出记录**，读不出必须转人工，否则"这处没检查过"和
+# 整合模式（mode="geo"）下额外要算盲点的类型。
+# 颗粒任何模式都算（防偷换的核心，每一颗都要看清）。PCB/主控在整合模式中逐槽出记录，
+# 读不出或被标签遮挡必须转人工，否则"这处没检查过"和
 # "这处检查合格"在结果里分不出来。老两条路（rules/template）的 PCB 读不出属既有行为，
 # 不在本次改动范围内，避免动到已在产线验证过的判定口径。
-_GEO_BLIND_TYPES = ("pcb", "pmic", "sot")
+_GEO_BLIND_TYPES = ("pcb", "controller")
 
 
 def _blind_dram(codes):
-    """OCR 与大模型都没读出日期的框（无年/周）——可能藏着被换芯片的盲点，需人工确认。"""
+    """本地 OCR 没读出日期的框（无年/周）需人工确认。"""
     return [c for c in codes
             if not c.week and (c.code_type == "dram"
                                or (getattr(c, "_geo", False)
@@ -247,12 +238,17 @@ def compute_signal(codes, threshold: float = SPREAD_THRESHOLD_WEEKS):
     thr_txt = f"{thr:g}"
     blind = _blind_dram(codes)
     blind_desc = [_loc_label(c) for c in blind]
-    pairs = [(c, _week_ordinal(c)) for c in codes if c.week]
+    # **只比颗粒之间**：不把 颗粒/PCB/主控 混在一个池子里算最大周差。
+    # 实测同一根条上颗粒 2546、PCB 2540~2543、主控(澜起RCD) 2534 —— 三者来自不同
+    # 厂家/产线，本就不会同周生产；混着比必然误报（主控与颗粒差 12 周就超了 10 周阈值）。
+    # PCB/主控 日期用于记录追溯，不参与颗粒一致性判定。
+    pairs = [(c, _week_ordinal(c)) for c in codes
+             if c.week and getattr(c, "code_type", "") == "dram"]
     pairs = [(c, o) for c, o in pairs if o is not None]
     if len(pairs) < 2:
         return {
             "status": "unknown", "qualified": None,
-            "spread_weeks": 0.0, "threshold": thr,
+            "spread_weeks": 0.0, "threshold": thr, "margin_weeks": None,
             "count": len(pairs), "blind": len(blind), "blind_desc": blind_desc,
             "message": "有效日期不足 2 个，无法比较周差",
         }
@@ -260,21 +256,28 @@ def compute_signal(codes, threshold: float = SPREAD_THRESHOLD_WEEKS):
     hi_c, hi = max(pairs, key=lambda p: p[1])
     spread = round((hi - lo) / 7.0, 1)
     qualified = spread <= thr
+    # 实际周差与**前端填的阈值**之间的差距：
+    #   合格时 margin ≥ 0 = 还剩多少余量；不合格时 margin < 0 = 超出多少周。
+    # 报出来便于现场判断阈值填得是否合适（余量太小说明阈值偏紧、容易误判）。
+    margin = round(thr - spread, 1)
     blind_txt = ("；另有 " + "、".join(blind_desc) + " 看不清日期，请人工确认") if blind else ""
+    margin_txt = (f"（距阈值还剩 {margin:g} 周）" if qualified
+                  else f"（超出阈值 {abs(margin):g} 周）")
     return {
         "status": "pass" if qualified else "fail",
         "qualified": qualified,
         "spread_weeks": spread,
         "threshold": thr,
+        "margin_weeks": margin,          # 阈值 − 实际周差（正=余量，负=超出）
         "count": len(pairs),
         "blind": len(blind),
         "blind_desc": blind_desc,
         "earliest": f"{lo_c.year}年{lo_c.week}周",
         "latest": f"{hi_c.year}年{hi_c.week}周",
         "message": (
-            f"最大周差 {spread} 周 ≤ {thr_txt}，合格{blind_txt}"
+            f"最大周差 {spread} 周 ≤ 阈值 {thr_txt}{margin_txt}，合格{blind_txt}"
             if qualified else
-            f"最大周差 {spread} 周 > {thr_txt}，不合格（"
+            f"最大周差 {spread} 周 > 阈值 {thr_txt}{margin_txt}，不合格（"
             f"最早 {_loc_label(lo_c)}{lo_c.year % 100}年{lo_c.week}周，"
             f"最晚 {_loc_label(hi_c)}{hi_c.year % 100}年{hi_c.week}周）{blind_txt}"
         ),
@@ -323,14 +326,14 @@ def _structure_dates(all_codes, signal):
 
 # --------------------- 核心识别 + 并行编排 ---------------------
 
-def _recognize_core(paths: dict, uid: str, mode="rules", template_id=None,
+def _recognize_core(paths: dict, uid: str, mode="geo", template_id=None,
                     current_year=None, threshold=None, vl_check=False) -> dict:
     """逐图识别 + 标注（含托盘空位跳过），返回**识别对象**与每面元数据。
 
     供 `run_recognize`（对外 JSON）与 `analyze_and_save`（按根拆分入库）共用——
     后者需要 DateCode 对象与每面槽位占位框，故此函数返回对象、不做 JSON 化。
     """
-    mode = (mode or "rules").lower()
+    mode = "rules" if (mode or "").lower() == "rules" else "geo"
     sides_out, all_codes = [], []
     occ_by_side = {}
     ocr_sec = 0.0
@@ -338,7 +341,7 @@ def _recognize_core(paths: dict, uid: str, mode="rules", template_id=None,
     stick_total = 0
 
     def _one_side(slot, in_path):
-        """跑一面：识别 + 标注。正/反面互不依赖，可并行（实测串行 9.0s → 并行 5.5s）。"""
+        """跑一面：识别 + 标注。正反面顺序调用，避免共享 PaddleOCR predictor 串扰。"""
         t_ocr = time.perf_counter()
         warns = []                                 # 本面的漏检告警（并行下不共享外层 list）
         occ = []                                   # 托盘槽位占位（仅整图固定模板面有）
@@ -347,9 +350,10 @@ def _recognize_core(paths: dict, uid: str, mode="rules", template_id=None,
         elif mode == "geo" and SLOT_KIND.get(slot) == "side":
             # 几何定位模式：框每张图现算，不吃模板坐标（不会滑框）。
             # 打 _geo 标记供 _blind_dram / _loc_label 区分 —— 这两处对几何模式
-            # 口径不同（PCB/PMIC/SOT 也算盲点、定位标签带槽号）。
+            # 口径不同（PCB/主控也算盲点、定位标签带槽号）。
             loc = {}
-            codes = recognize_geo(in_path, current_year=current_year, loc_out=loc)
+            codes = recognize_geo(in_path, current_year=current_year, loc_out=loc,
+                                  side=slot, template_id=template_id)
             for c in codes:
                 c._geo = True
             warns.extend((loc.get("warn") or []))
@@ -381,28 +385,12 @@ def _recognize_core(paths: dict, uid: str, mode="rules", template_id=None,
             "counts": _counts(codes), "codes": [c.to_dict() for c in codes],
             "slots": occ, "stick_count": stick_count,   # 占位概要 + 本面识别到的根数
         }
-        # 整图大模型核对漏检（仅正/背面颗粒面）
-        if vl_check and slot in ("front", "back"):
-            from .inspection.quality_inspect import count_dram_vl
-            cov = count_dram_vl(in_path)
-            if cov:
-                detected = sum(1 for c in codes if c.code_type == "dram")
-                vl_total = cov.get("total", 0)
-                missing = max(0, vl_total - detected)
-                cov.update({"detected": detected, "missing": missing})
-                side_out["coverage"] = cov
-                if missing >= 2:                    # 明显偏少才提示（容忍 ±1 误差）
-                    warns.append(
-                        f"{SLOT_LABELS.get(slot, slot)}：OCR 检出 {detected} 颗，"
-                        f"大模型看到约 {vl_total} 颗，疑似漏检 {missing} 颗，请人工核对")
         return slot, codes, occ, side_out, stick_count, side_sec, warns
 
     todo = [(slot, p) for slot, p in paths.items() if p]
-    if len(todo) > 1:
-        with ThreadPoolExecutor(max_workers=len(todo)) as ex:
-            done = list(ex.map(lambda a: _one_side(*a), todo))
-    else:
-        done = [_one_side(*a) for a in todo]
+    if mode == "geo":
+        todo.sort(key=lambda item: (0 if item[0] == "back" else 1, item[0]))
+    done = [_one_side(*args) for args in todo]
     for slot, codes, occ, side_out, stick_count, side_sec, warns in done:
         all_codes.extend(codes)
         occ_by_side[slot] = occ
@@ -433,7 +421,7 @@ def _stick_breakdown(all_codes, threshold):
     return sticks
 
 
-def run_recognize(paths: dict, uid: str, mode="rules", template_id=None,
+def run_recognize(paths: dict, uid: str, mode="geo", template_id=None,
                   current_year=None, threshold=None, vl_check=False) -> dict:
     """核心识别（对外 JSON）：逐图识别+标注+结构化。
 
@@ -455,26 +443,18 @@ def run_recognize(paths: dict, uid: str, mode="rules", template_id=None,
     }
 
 
-def analyze_all(paths: dict, uid: str, mode="rules", template_id=None,
+def analyze_all(paths: dict, uid: str, mode="geo", template_id=None,
                 current_year=None, threshold=None, vl_check=False):
-    """**并行**跑 识别(OCR+PCB大模型) / 外观质检 / 读标签，缩短总时长。
-
-    三个任务相互独立：OCR 在本地(GPU)，外观质检与读标签是大模型网络调用；
-    并发后墙钟时间 ≈ max(识别, 外观, 标签)，而非三者相加。
-    返回 (recognize, inspect, label)，recognize['elapsed_sec'] 为并行后的总耗时。
-    vl_check=True 时识别里额外做"整图大模型核对漏检"。
-    """
+    """只跑本地日期 OCR 与本地二维码解码，不调用多模态模型。"""
     t0 = time.perf_counter()
-    has_f, has_b = bool(paths.get("front")), bool(paths.get("back"))
-    with ThreadPoolExecutor(max_workers=3) as ex:
-        fut_rec = ex.submit(run_recognize, paths, uid, mode, template_id, current_year, threshold, vl_check)
-        fut_insp = ex.submit(inspect_module, paths.get("front"), paths.get("back")) if (has_f or has_b) else None
+    has_f = bool(paths.get("front"))
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        fut_rec = ex.submit(run_recognize, paths, uid, mode, template_id, current_year, threshold, False)
         fut_label = ex.submit(_read_label, paths["front"]) if has_f else None
         rec = fut_rec.result()
-        insp = fut_insp.result() if fut_insp else {}
         label = fut_label.result() if fut_label else {}
     rec["elapsed_sec"] = round(time.perf_counter() - t0, 2)
-    return rec, insp, label
+    return rec, {}, label
 
 
 def build_record(rec: dict, insp: dict, label: dict, operator: str,
@@ -486,18 +466,9 @@ def build_record(rec: dict, insp: dict, label: dict, operator: str,
     """
     dates = rec.get("dates", {}) or {}
     date_ok = dates.get("date_ok")
-    ins_ok = bool(insp.get("ok"))
-    comp_ok = insp.get("comp_ok") if ins_ok else None
-    gf_ok = insp.get("gold_finger_ok") if ins_ok else None
-    cm_ok = insp.get("chip_mark_ok") if ins_ok else None
-    fails = list(dates.get("date_fail") or []) + list(insp.get("appearance_fails") or [])
-    checks = [date_ok, comp_ok, gf_ok, cm_ok]
-    if any(c is False for c in checks):
-        verdict = "fail"
-    elif all(c is True for c in checks):
-        verdict = "pass"
-    else:
-        verdict = "unknown"
+    comp_ok = gf_ok = cm_ok = None
+    fails = list(dates.get("date_fail") or [])
+    verdict = "pass" if date_ok is True else "fail" if date_ok is False else "unknown"
     lb = label or {}
     b = batch or {}
     # 批次登记为准：有批次则品牌/容量/频率/客户/批次号取批次，否则回退标签读数（含二维码解码结果）
@@ -506,13 +477,12 @@ def build_record(rec: dict, insp: dict, label: dict, operator: str,
     # 型号：订单登记优先，回退标签读数；供应商仅订单登记有（标签读不出）
     model = b.get("model") or lb.get("model", "")
     supplier = b.get("supplier", "")
-    # SN 是追溯/去重/防偷换主键：二维码没解出(SN 空) → 不能静默判合格，降级为「待人工补录」
+    # SN 仍用于追溯，但当前结论只由日期决定；二维码未读出不改变日期判定。
     sn_missing = not (lb.get("sn") or "").strip()
     if sn_missing:
-        if verdict == "pass":
-            verdict = "unknown"
-        fails.append("SN 二维码未解出，待人工补录（SN 只认二维码，不采纳大模型猜测）")
+        fails.append("SN 二维码未解出，待人工补录")
     return {
+        "batch_id": int(b.get("id") or 0) or None,
         "operator": operator or "",
         "sn": lb.get("sn", ""), "brand": brand,
         "model": model, "frequency": frequency,
@@ -527,7 +497,7 @@ def build_record(rec: dict, insp: dict, label: dict, operator: str,
         "date_ok": date_ok, "comp_ok": comp_ok,
         "gold_finger_ok": gf_ok, "chip_mark_ok": cm_ok,
         "verdict": verdict,
-        "fail_desc": ("；".join(fails) if (verdict != "pass" and fails) else ""),
+        "fail_desc": "；".join(fails),
         "review_status": "未复查",
         "sn_unread": sn_missing,                     # SN 未精确读出(二维码没解开)→ 前端标红待人工
         "label_data": {
@@ -539,7 +509,7 @@ def build_record(rec: dict, insp: dict, label: dict, operator: str,
 
 
 def _crop_slot(src_path, box_px, out_tag) -> str | None:
-    """把某槽区域从原图裁出存到 uploads（供该根**单独**送大模型读 SN / 外观）。
+    """把某槽区域从原图裁出存到 uploads，供该根单独做本地二维码解码。
 
     box_px = [x0,y0,x1,y1]（像素）。无路径/无框/裁空 → 返回 None。
     """
@@ -573,12 +543,12 @@ def _stick_summary(record: dict, rid) -> dict:
         "controller_date": record["controller_date"], "pcb_date": record["pcb_date"],
         "storage_count": len(record["storage_chips"]), "fail_desc": record["fail_desc"],
         # 外观质检逐项（前端要分项显示：日期一致/元器件/金手指/芯片打磨）
-        # True=合格 False=不合格 None=未检(大模型不可用)
+        # 外观项当前停用，统一为 None。
         "date_ok": record.get("date_ok"), "comp_ok": record.get("comp_ok"),
         "gold_finger_ok": record.get("gold_finger_ok"),
         "chip_mark_ok": record.get("chip_mark_ok"),
         "inspection_id": record.get("inspection_id", ""),
-        "recognition_mode": record.get("recognition_mode", "rules"),
+        "recognition_mode": record.get("recognition_mode", "geo"),
         "timing": record.get("timing") or {},
         "elapsed_sec": record.get("elapsed_sec") or 0,
         "token_usage": record.get("token_usage") or {},
@@ -636,6 +606,8 @@ def _slot_template(template_id=None):
     """选择托盘几何模板；规则识别只借用槽位坐标，不借用日期框。"""
     if template_id:
         requested = template_store.get_template(template_id)
+        if requested and requested.get("calibrated", True) is False:
+            raise ValueError(f"型号模板“{requested.get('model') or template_id}”尚未标定，需要正反面实拍图后才能启用")
         sides = (requested or {}).get("sides") or {}
         front_n = len((sides.get("front") or {}).get("slots") or [])
         back_n = len((sides.get("back") or {}).get("slots") or [])
@@ -644,6 +616,8 @@ def _slot_template(template_id=None):
         log.warning("定位模板 %s 缺少正反面四槽坐标，改用完整四槽模板", template_id)
     candidates = []
     for item in template_store.list_templates():
+        if not item.get("calibrated"):
+            continue
         tpl = template_store.get_template(item.get("id"))
         sides = (tpl or {}).get("sides") or {}
         front_n = len((sides.get("front") or {}).get("slots") or [])
@@ -653,6 +627,76 @@ def _slot_template(template_id=None):
         return None, None
     _, _, tid, tpl = max(candidates, key=lambda row: (row[0], row[1]))
     return tid, tpl
+
+
+def _batch_product_family(batch: dict | None) -> str:
+    """从订单字段识别产品家族；只识别明确品牌，不对未知型号做猜测。"""
+    if not batch:
+        return ""
+    text = " ".join(str(batch.get(key) or "") for key in (
+        "brand", "model", "kd_specification", "kd_material_number", "remark",
+    )).lower()
+    samsung = any(token in text for token in ("三星", "samsung", "（sam）", "(sam)"))
+    hynix = any(token in text for token in ("海力士", "sk hynix", "skhynix", "（sk）", "(sk)"))
+    if samsung and hynix:
+        return "mixed"
+    if samsung:
+        return "samsung"
+    if hynix:
+        return "hynix"
+    return ""
+
+
+def _batch_product_spec(batch: dict | None) -> tuple[str, set[str]]:
+    if not batch:
+        return "", set()
+    capacity = str(batch.get("capacity") or "").upper().replace(" ", "")
+    if capacity.endswith("G") and not capacity.endswith("GB"):
+        capacity += "B"
+    frequencies = set(re.findall(r"(?<!\d)([1-9]\d{3})(?!\d)", str(batch.get("frequency") or "")))
+    return capacity, frequencies
+
+
+def _resolve_product_template(batch: dict | None, requested_id: str | None) -> str:
+    """按订单品牌选择已标定模板；未知或混合产品不静默套用其他品牌模板。"""
+    requested = template_store.get_template(requested_id) if requested_id else None
+    if requested and requested.get("calibrated", True) is False:
+        raise ValueError(f"型号模板“{requested.get('model') or requested_id}”尚未标定，需要正反面实拍图后才能启用")
+
+    family = _batch_product_family(batch)
+    if family == "mixed":
+        raise ValueError("当前采购订单包含三星和海力士混合物料，无法自动确定识别模板，请拆分订单或明确选择实物型号")
+
+    capacity, frequencies = _batch_product_spec(batch)
+    if family in ("samsung", "hynix") and (capacity != "64GB" or frequencies != {"5600"}):
+        brand_name = "三星" if family == "samsung" else "海力士"
+        shown_frequency = " / ".join(sorted(frequencies)) or "未填写"
+        raise ValueError(
+            f"当前只配置了{brand_name} 64GB 5600，订单规格为 {capacity or '未填写容量'} / {shown_frequency}，"
+            "不能套用现有模板")
+
+    family_templates = {
+        "samsung": "samsung-4up-0808",
+        "hynix": "hynix-64gb-5600-pending",
+    }
+    expected_id = family_templates.get(family)
+    if expected_id:
+        expected = template_store.get_template(expected_id)
+        if not expected or expected.get("calibrated", True) is False:
+            name = "海力士 64GB 5600" if family == "hynix" else "三星 64GB 5600"
+            raise ValueError(f"{name}识别模板尚未标定，请提供同一相机位下的正面、反面实拍图")
+        if requested_id and requested_id != expected_id:
+            raise ValueError(f"当前订单品牌与所选模板不一致，应使用 {expected.get('model') or expected_id}")
+        return expected_id
+
+    if requested_id:
+        return requested_id
+    if batch:
+        raise ValueError("无法从采购订单确定内存条品牌，不能自动套用识别模板，请先补充订单品牌/型号")
+    default_id = template_store.default_template_id()
+    if not default_id:
+        raise ValueError("没有可用的已标定识别模板")
+    return default_id
 
 
 def _pre_crops(paths: dict, uid: str, mode: str, template_id):
@@ -702,21 +746,15 @@ def _pre_crops(paths: dict, uid: str, mode: str, template_id):
         return None
 
 
-def _vl_branch(crops: dict, stage=None):
-    """逐根并行跑外观质检与标签解码，分类耗时均取最慢任务的墙钟时间。"""
+def _local_label_branch(crops: dict, stage=None):
+    """逐根并行做本地二维码解码，不调用外观或多模态模型。"""
     slots = sorted(crops)
     if stage:
         try:
-            stage("inspect", f"已裁出 {len(slots)} 根，大模型外观质检 + 读二维码进行中（与日期识别并行）…")
+            stage("inspect", f"已裁出 {len(slots)} 根，本地二维码解码进行中（与日期识别并行）…")
         except Exception:  # noqa: BLE001
             pass
     t = time.perf_counter()
-
-    def _insp(si):
-        started = time.perf_counter()
-        f, b = crops[si]
-        result = inspect_module(f, b) if (f or b) else {}
-        return result, time.perf_counter() - started
 
     def _lbl(si):
         started = time.perf_counter()
@@ -724,19 +762,15 @@ def _vl_branch(crops: dict, stage=None):
         result = _read_label(f)
         return result, time.perf_counter() - started
 
-    with ThreadPoolExecutor(max_workers=min(8, 2 * len(slots))) as ex:
-        fi = {si: ex.submit(_insp, si) for si in slots}
+    with ThreadPoolExecutor(max_workers=min(4, len(slots))) as ex:
         fl = {si: ex.submit(_lbl, si) for si in slots}
-        insp_done = {si: fi[si].result() for si in slots}
         label_done = {si: fl[si].result() for si in slots}
-    insps = {si: value[0] for si, value in insp_done.items()}
     lbls = {si: value[0] for si, value in label_done.items()}
     timing = {
-        "appearance": round(max((value[1] for value in insp_done.values()), default=0), 3),
         "label_decode": round(max((value[1] for value in label_done.values()), default=0), 3),
-        "inspect_label_parallel": round(time.perf_counter() - t, 3),
+        "local_decode_parallel": round(time.perf_counter() - t, 3),
     }
-    return insps, lbls, timing, crops
+    return lbls, timing, crops
 
 
 def _assign_rule_codes_to_slots(core: dict, slot_info: dict) -> None:
@@ -785,19 +819,21 @@ def _assign_rule_codes_to_slots(core: dict, slot_info: dict) -> None:
     core["stick_total"] = len(occupied)
 
 
-def analyze_and_save(job, operator="", mode="rules", template_id=None,
+def analyze_and_save(job, operator="", mode="geo", template_id=None,
                      current_year=None, threshold=None, batch_id=None, save=True,
                      on_stage=None) -> dict:
     """手动处理一盘：四槽几何裁图 + 规则 OCR + 逐根标签/外观 + 入库。"""
     t0 = time.perf_counter()
     uid = uuid.uuid4().hex[:12]
     # 本工作流只认 rules / geo 两种：
-    #   rules —— 原有行为，整图找日期、不拆槽、读不到 PCB（默认，一行未动）
-    #   geo   —— 几何定位，框每张图现算，逐槽出 颗粒 + PCB/PMIC/SOT
+    #   geo   —— 默认整合识别，逐槽同时出正反面颗粒 + PCB + 可见主控
+    #   rules —— 兼容旧行为，整图找日期、不拆槽、读不到 PCB
     # template 模式不在此工作流启用（它吃固定坐标会滑框，且这里的 template_id
-    # 本来只用于托盘槽位几何裁图，不参与识别）。传别的值一律落回 rules。
-    mode = "geo" if (mode or "").lower() == "geo" else "rules"
-    token_before = metrics.vl_usage()
+    # 本来只用于托盘槽位几何裁图，不参与识别）。缺省或传 template 都使用整合识别。
+    mode = "rules" if (mode or "").lower() == "rules" else "geo"
+    token_usage = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    batch = db.get_batch(batch_id) if batch_id else None
+    template_id = _resolve_product_template(batch, template_id)
     paths = {}
     for slot, src in (job.paths or {}).items():
         if src and os.path.isfile(src):
@@ -829,40 +865,38 @@ def analyze_and_save(job, operator="", mode="rules", template_id=None,
             "recognition_mode": mode,
             "timing": {"file_prepare": prepare_sec, "slot_detect_crop": crop_sec,
                        "total": round(time.perf_counter() - t0, 3)},
-            "token_usage": metrics.vl_usage_delta(token_before),
+            "token_usage": token_usage,
         }
 
-    # 规则 OCR 与“逐根外观 + 标签解码”并行；parallel_analysis 是这一段唯一计入总链路的墙钟耗时。
+    # 日期 OCR 与逐根本地二维码解码并行，全程不调用多模态模型。
     analysis_started = time.perf_counter()
     with ThreadPoolExecutor(max_workers=2) as ex:
-        future_vl = ex.submit(_vl_branch, pre["crops"], _stage) if pre else None
+        future_labels = ex.submit(_local_label_branch, pre["crops"], _stage) if pre else None
         rec_started = time.perf_counter()
         core = _recognize_core(paths, uid, mode, None, current_year, threshold)
         rec_sec = round(time.perf_counter() - rec_started, 3)
         if pre:
             _assign_rule_codes_to_slots(core, pre)
         _n_codes = len(core.get("all_codes") or [])
-        _stage("inspect", f"规则 OCR 完成({rec_sec}s，读出 {_n_codes} 处日期)，等待并行任务…",
+        _stage("inspect", f"本地 OCR 完成({rec_sec}s，读出 {_n_codes} 处日期)，等待二维码解码…",
                recognize=rec_sec, codes=_n_codes)
-        vl_done = future_vl.result() if future_vl else None
+        label_done = future_labels.result() if future_labels else None
     parallel_sec = round(time.perf_counter() - analysis_started, 3)
 
-    batch = db.get_batch(batch_id) if batch_id else None
     imgs = _images_from_rec({"sides": core["sides"]})     # 整盘原图/标注图（多根共用）
     all_codes = core["all_codes"]
     annotated = {s["side"]: s["annotated_url"] for s in core["sides"]}
 
-    if pre and vl_done:
+    if pre and label_done:
         occ_slots = occupied
-        insps, lbls, vl_timing, _ = vl_done
+        lbls, local_timing, _ = label_done
         _stage("annotate", f"并行分析完成({parallel_sec}s)，生成标注图并{'入库' if save else '汇总'}…",
                parallel_analysis=parallel_sec, sticks=len(occ_slots))
-        token_usage = metrics.vl_usage_delta(token_before)
         timing = {
             "file_prepare": prepare_sec,
             "slot_detect_crop": crop_sec,
             "rule_ocr": rec_sec,
-            **vl_timing,
+            **local_timing,
             "parallel_analysis": parallel_sec,
             "archive": 0.0,
             "database": 0.0,
@@ -891,7 +925,7 @@ def analyze_and_save(job, operator="", mode="rules", template_id=None,
             sc = [c for c in all_codes if getattr(c, "slot", -1) == si]
             sig = compute_signal(sc, threshold)
             rec_like = {"dates": _structure_dates(sc, sig), "sides": core["sides"]}
-            record = build_record(rec_like, insps.get(si) or {}, lbls.get(si) or {}, operator, batch=batch)
+            record = build_record(rec_like, {}, lbls.get(si) or {}, operator, batch=batch)
             record.update(imgs)                            # 追溯：共用整盘原图/标注图
             record["slot_pos"] = si + 1                    # 托盘第几槽(1..N，左→右)
             record.update({"inspection_id": uid, "recognition_mode": mode,
@@ -902,7 +936,8 @@ def analyze_and_save(job, operator="", mode="rules", template_id=None,
         if save:
             for record in records:
                 si = int(record["slot_pos"]) - 1
-                archive_record_images(record, sub=f"{uid}_s{si+1}")
+                order_dir = f"order_{batch_id}" if batch_id else "unassigned"
+                archive_record_images(record, sub=f"{order_dir}/{uid}_s{si+1}")
         timing["archive"] = round(time.perf_counter() - archive_started, 3) if save else 0.0
 
         ids = []
@@ -945,26 +980,21 @@ def analyze_and_save(job, operator="", mode="rules", template_id=None,
     # 没有可用托盘几何时保留单根兼容路径，但仍使用规则 OCR。
     signal = compute_signal(all_codes, threshold)
     rec_like = {"dates": _structure_dates(all_codes, signal), "sides": core["sides"]}
-    has_f, has_b = bool(paths.get("front")), bool(paths.get("back"))
     branch_started = time.perf_counter()
-    with ThreadPoolExecutor(max_workers=2) as ex:
-        fut_insp = ex.submit(inspect_module, paths.get("front"), paths.get("back")) if (has_f or has_b) else None
-        fut_label = ex.submit(_read_label, paths["front"]) if has_f else None
-        insp = fut_insp.result() if fut_insp else {}
-        label = fut_label.result() if fut_label else {}
+    label = _read_label(paths["front"]) if paths.get("front") else {}
     branch_sec = round(time.perf_counter() - branch_started, 3)
-    token_usage = metrics.vl_usage_delta(token_before)
-    record = build_record(rec_like, insp, label, operator, batch=batch)
+    record = build_record(rec_like, {}, label, operator, batch=batch)
     record.update(imgs)
     timing = {"file_prepare": prepare_sec, "slot_detect_crop": crop_sec,
-              "rule_ocr": rec_sec, "inspect_label_parallel": branch_sec,
+              "rule_ocr": rec_sec, "label_decode": branch_sec,
               "parallel_analysis": parallel_sec, "archive": 0.0, "database": 0.0}
     record.update({"inspection_id": uid, "recognition_mode": mode,
                    "timing": timing, "token_usage": token_usage})
     rid = None
     if save:
         started = time.perf_counter()
-        archive_record_images(record, sub=uid)
+        order_dir = f"order_{batch_id}" if batch_id else "unassigned"
+        archive_record_images(record, sub=f"{order_dir}/{uid}")
         timing["archive"] = round(time.perf_counter() - started, 3)
         started = time.perf_counter()
         try:

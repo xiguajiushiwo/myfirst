@@ -77,7 +77,7 @@ async def _access_log(request: Request, call_next):
 _PUBLIC_PATHS = {"/login", "/api/login", "/api/register", "/api/me", "/app.css",
                  "/logo.png", "/logo_hd.png", "/logo_mark.png", "/favicon.ico", "/favicon.png", "/api/health"}
 # 仅管理员可访问的页面 / 接口前缀（质检员被挡）
-_ADMIN_PAGES = {"/manage", "/settings", "/users"}
+_ADMIN_PAGES = {"/settings", "/users"}
 _ADMIN_API_PREFIX = "/api/users"
 
 
@@ -167,6 +167,15 @@ def settings_page():
 @app.get("/app.css")
 def app_css():
     return FileResponse(os.path.join(WEB_DIR, "app.css"), media_type="text/css")
+
+
+@app.get("/sync-alert.js")
+def sync_alert_js():
+    return FileResponse(
+        os.path.join(WEB_DIR, "sync-alert.js"),
+        media_type="application/javascript",
+        headers=_NO_CACHE,
+    )
 
 
 @app.get("/logo.png")

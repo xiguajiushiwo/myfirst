@@ -37,7 +37,7 @@ def _bbox(box):
     return min(xs), min(ys), max(xs), max(ys)
 
 
-# OCR 置信度阈值：低于它的颗粒改用大模型识别（可用 OCR_CONF_MIN 覆盖）
+# OCR 置信度阈值：低于它的日期转人工复核（可用 OCR_CONF_MIN 覆盖）
 _CONF_MIN = float(os.environ.get("OCR_CONF_MIN", "0.85"))
 
 # 字符混淆挽救：激光点阵字里数字常被读成形近字母（5→S、0→O、1→I/L…）。
@@ -415,6 +415,13 @@ def detect_occupied_slots(img: Image.Image, slot_rects, thr: Optional[float] = N
 # 白标签判据：又白又平（高亮度 + 低边缘）→ 这个框位压在标签上，别把标签上的字当日期读。
 _LABEL_WHITE_MIN = float(os.environ.get("LABEL_WHITE_MIN", "205"))   # 平均亮度阈值(0~255)
 _LABEL_EDGE_MAX = float(os.environ.get("LABEL_EDGE_MAX", "0.03"))    # 边缘占比上限
+# **部分遮挡**判据：框内灰度标准差上限。白标签压住一部分、芯片露一部分时明暗混杂，std 飙升。
+# 实测正面主控：未遮挡那槽 std=29.2（正确读出 2534）；被标签盖住日期行的三槽 std=94.7~107.8；
+# 未遮挡的 PCB 框 std=31~44。取 70 两侧都留足余量。
+# 必须先判再读：这种框硬读会把标签上的条码编号当成日期（实测读出 2202/1411/1108 假值），
+# 而假日期会参与超差判定 —— 比"读不出"危险得多（读不出只是转人工，假值会导致误判）。
+_OCCLUDE_STD_MAX = float(os.environ.get("OCCLUDE_STD_MAX", "70"))
+_OCCLUDE_EDGE_MAX = float(os.environ.get("OCCLUDE_EDGE_MAX", "0.12"))
 
 
 def _box_kind(img: Image.Image, box_px) -> str:
@@ -435,7 +442,9 @@ def _box_kind(img: Image.Image, box_px) -> str:
         bright = float(gray.mean())
         edges = float((cv2.Canny(gray, 60, 160) > 0).mean())
         if bright >= _LABEL_WHITE_MIN and edges <= _LABEL_EDGE_MAX:
-            return "label"
+            return "label"                          # 整框压在纯白标签上
+        if float(gray.std()) >= _OCCLUDE_STD_MAX and edges <= _OCCLUDE_EDGE_MAX:
+            return "label"                          # 部分遮挡：明暗混杂，读了只会读到标签上的字
         return "chip"
     except Exception:
         return "chip"
@@ -454,7 +463,8 @@ def _assign_dram_idx(codes: list[DateCode]):
 def recognize_side(image_path: str, side: str,
                    current_year: Optional[int] = None,
                    template_id: Optional[str] = None,
-                   occ_out: Optional[list] = None) -> list[DateCode]:
+                   occ_out: Optional[list] = None,
+                   code_types: Optional[set[str]] = None) -> list[DateCode]:
     """按所选型号模板的固定框只识别存储颗粒(DRAM)，输出原生识别结果。
 
     - 能解码为合法年/周就给日期（不做多数校正、不预测，误读也照实给）。
@@ -489,11 +499,13 @@ def recognize_side(image_path: str, side: str,
         occ_out.extend(occ)
 
     results: list[DateCode] = []
-    pending: list[tuple] = []                     # dram(3位)：低置信/未读，待大模型
-    pending4: list[tuple] = []                    # pcb/主控(4位)：低置信/未读，待大模型
+    pending: list[tuple] = []                     # dram(3位)：低置信/未读，待人工复核
+    pending4: list[tuple] = []                    # pcb/主控(4位)：低置信/未读，待人工复核
     for slot in sorted(layout["boxes"], key=lambda b: b.get("id", 0)):
         stype = slot.get("type")
         if stype not in ("dram", "pcb", "controller"):
+            continue
+        if code_types is not None and stype not in code_types:
             continue
         box_slot = _slot_of_box(slot["box"], slot_rects) if slot_rects else -1
         if occ and box_slot not in occupied:      # 该框所在槽是空位 → 跳过（不识别、不判定）
@@ -521,7 +533,7 @@ def recognize_side(image_path: str, side: str,
                 dc = DateCode(raw=raw, code_type="dram", year=0, week=0, week_start="",
                               confidence=score, source_text=joined, box=box_px,
                               digit_format="YWW", status="raw",
-                              note="OCR 未解码，待大模型", ocr_raw=raw, ocr_confidence=score)
+                              note="OCR 未解码，请人工复核", ocr_raw=raw, ocr_confidence=score)
             dc.slot = box_slot
             # 标注框收紧到只圈数字：复用刚才那次 OCR 的 detection，不再重跑
             if y:
@@ -532,12 +544,11 @@ def recognize_side(image_path: str, side: str,
             if (not y) or (score < _CONF_MIN):
                 pending.append((dc, crop))
         else:
-            # PCB / 主控：框出 4 位 YYWW，低置信转大模型。
-            # PCB 倒印不再在此试翻转（省一次 OCR），交大模型兜底 —— 其提示词已含倒字约束。
+            # PCB / 主控：框出 4 位 YYWW，低置信转人工复核。
             y, w, raw, score, joined, variant, best_img, hit = _best_read(
                 engine, crop, current_year, reader=_read_yyww, roi=roi)
             score = round(score, 3)
-            note = ("" if variant == "orig" else f"方向/增强校正（{variant}）") if y else "OCR 未解码，待大模型"
+            note = ("" if variant == "orig" else f"方向/增强校正（{variant}）") if y else "OCR 未解码，请人工复核"
             dc = DateCode(raw=raw, code_type=stype, year=y or 0, week=w or 0,
                           week_start=_week_start_date(y, w) if y else "",
                           confidence=score, source_text=joined, box=box_px,
@@ -549,13 +560,13 @@ def recognize_side(image_path: str, side: str,
                 if tb:
                     dc.box = tb
             results.append(dc)
-            # 年份离谱(超近年窗口)＝OCR 多半读到了旁边的元器件料号，哪怕置信高也转大模型复核
+            # 年份离谱(超近年窗口)说明可能读到旁边料号，转人工复核。
             implausible = bool(y) and not ((current_year - 12) <= y <= (current_year + 1))
             if (not y) or (score < _CONF_MIN) or implausible:
                 pending4.append((dc, crop))
 
-    _vl_fallback_dram(pending, current_year)      # dram 3位 大模型兜底（透明：不抹掉 OCR 原始读数/置信）
-    _vl_fallback_yyww(pending4, current_year)     # pcb/主控 4位 大模型兜底
+    _vl_fallback_dram(pending, current_year)
+    _vl_fallback_yyww(pending4, current_year)
     _assign_dram_idx(results)
     return results
 
@@ -575,115 +586,26 @@ def _prep_for_vl(engine, crop: Image.Image) -> Image.Image:
 
 
 def _vl_fallback_dram(pending: list[tuple], year: int):
-    """把低置信/未读的颗粒【逐颗】交给大模型识别，读出的回填（标注来源）。
-
-    **发送前统一预处理**（`_prep_for_vl`：翻正 + 对比增强）——这是发给大模型的唯一入口，
-    所有识别路径（模板/规则、上传/文件夹/流水线）都在此保证方向已校正、已增强再发。
-    逐颗单图单调用（`read_crop_vl`）比批量拼多图更准，用线程池并发避免变慢。
-    """
-    pending = [(dc, crop) for dc, crop in pending if crop is not None]
-    if not pending:
-        return
-    from concurrent.futures import ThreadPoolExecutor
-    from ..inspection.quality_inspect import read_crop_vl
-    engine = get_engine()
-    prepped = [_prep_for_vl(engine, crop) for _, crop in pending]   # 发送前：翻正 + 增强
-    with ThreadPoolExecutor(max_workers=min(8, len(prepped))) as ex:
-        digits_list = list(ex.map(lambda im: read_crop_vl(im, kind="dram"), prepped))
-    for (dc, _), digits in zip(pending, digits_list):
-        # 透明：记录送检前 OCR 的原始读数与真实置信度，不被大模型抹平
+    """低置信或未读颗粒保留为人工复核项，不调用多模态模型。"""
+    for dc, _ in pending:
         if not dc.ocr_raw:
             dc.ocr_raw, dc.ocr_confidence = dc.raw, dc.confidence
         oraw = dc.ocr_raw or "空"
-        digits = (digits or "")[:3]
-        d = _decode_yww(digits, year) if len(digits) == 3 else None
-        if d:
-            dc.year, dc.week = d
-            dc.week_start = _week_start_date(*d)
-            dc.raw = digits                        # 展示值用大模型读数
-            dc.status = "ok"
-            dc.model_confidence = 0.85             # 标记：本颗由大模型读出
-            # 保留真实 OCR 置信（dc.confidence 不覆盖为 0.85），note 摊开两边
-            dc.note = f"OCR原文「{oraw}」(置信{dc.ocr_confidence})低/未解码 → 大模型读为 {digits}"
-        else:
-            dc.note = f"OCR原文「{oraw}」(置信{dc.ocr_confidence})，大模型也未读出"
+        dc.note = f"OCR原文「{oraw}」(置信{dc.ocr_confidence})低或未解码，请人工复核"
 
 
 def _vl_fallback_yyww(pending: list[tuple], year: int):
-    """PCB/主控 4 位 YYWW 的大模型兜底（与 dram 同套：发送前翻正+增强，逐颗单调用）。"""
-    pending = [(dc, crop) for dc, crop in pending if crop is not None]
-    if not pending:
-        return
-    from concurrent.futures import ThreadPoolExecutor
-    from ..inspection.quality_inspect import read_crop_vl
-    engine = get_engine()
-    prepped = [_prep_for_vl(engine, crop) for _, crop in pending]
-    with ThreadPoolExecutor(max_workers=min(8, len(prepped))) as ex:
-        digits_list = list(ex.map(lambda im: read_crop_vl(im, kind="pcb"), prepped))
-    for (dc, _), digits in zip(pending, digits_list):
+    """PCB/主控低置信或未读项保留为人工复核，不调用多模态模型。"""
+    for dc, _ in pending:
         if not dc.ocr_raw:
             dc.ocr_raw, dc.ocr_confidence = dc.raw, dc.confidence
         oraw = dc.ocr_raw or "空"
-        digits = (digits or "")[:4]
-        d = _decode_yyww(digits, year) if len(digits) == 4 else None
-        if d:
-            dc.year, dc.week = d
-            dc.week_start = _week_start_date(*d)
-            dc.raw = digits
-            dc.status = "ok"
-            dc.model_confidence = 0.85
-            dc.note = f"OCR原文「{oraw}」(置信{dc.ocr_confidence})低/未解码 → 大模型读为 {digits}"
-        else:
-            dc.note = f"OCR原文「{oraw}」(置信{dc.ocr_confidence})，大模型也未读出"
+        dc.note = f"OCR原文「{oraw}」(置信{dc.ocr_confidence})低或未解码，请人工复核"
 
 
 def _controller_vl_fallback(image_path: str, codes: list, current_year: int):
-    """规则模式主控兜底：OCR 没读到主控时，裁模组中央带(RCD 所在)交大模型读 YYWW。
-
-    主控(RCD)常 180°反贴且字小，PaddleOCR 读不动；大模型能读且自处理旋转(实测读出 Z2417A1→2417)。
-    仅正面调用（反面中央是别的，避免误判成主控）。
-    """
-    if any(getattr(c, "code_type", "") == "controller" and c.week for c in codes):
-        return                                         # 已有主控日期，不补
-    boxes = [c.box for c in codes if getattr(c, "box", None)]
-    if len(boxes) < 4:
-        return                                         # 芯片太少，定位不可靠，不猜
-    import cv2
-    from .date_parser import DateCode, _decode_yyww, _week_start_date
-    from ..inspection.quality_inspect import read_yyww_vl
-    xs = [p[0] for b in boxes for p in b]
-    ys = [p[1] for b in boxes for p in b]
-    x0, x1, y0, y1 = int(min(xs)), int(max(xs)), int(min(ys)), int(max(ys))
-    cy, hh = (y0 + y1) // 2, (y1 - y0)
-    yt, yb = max(0, cy - int(hh * 0.09)), cy + int(hh * 0.09)   # 上下两半颗粒之间的中央带(收窄到RCD)
-    im = cv2.imread(image_path)
-    if im is None:
-        return
-    crop = im[yt:yb, x0:x1]
-    if crop.size == 0:
-        return
-    tmp = image_path + ".rcd.jpg"
-    cv2.imwrite(tmp, crop)
-    try:
-        digits, raw, conf = read_yyww_vl(tmp)
-    finally:
-        try:
-            os.remove(tmp)
-        except OSError:
-            pass
-    d = _decode_yyww(digits, current_year) if len(digits) == 4 else None
-    if not d or conf < 0.8:                         # 宁可漏不可错：低置信不采纳，留给人工/模板
-        return
-    yy, ww = d
-    dc = DateCode(raw=digits, code_type="controller", year=yy, week=ww,
-                  week_start=_week_start_date(yy, ww), confidence=0.0, source_text=raw,
-                  box=[[x0, yt], [x1, yt], [x1, yb], [x0, yb]], digit_format="YYWW",
-                  note=f"OCR未读到主控 → 大模型读为 {digits}(置信{conf})", status="ok")
-    try:
-        dc.model_confidence = conf or 0.85
-    except Exception:  # noqa: BLE001
-        pass
-    codes.append(dc)
+    """兼容旧调用点；当前规则模式不再使用多模态主控兜底。"""
+    return
 
 
 def recognize_rules(image_path: str,
@@ -778,60 +700,19 @@ def recognize_chip(image_path: str, kind: str,
 
 def recognize_pcb(image_path: str,
                   current_year: Optional[int] = None) -> list[DateCode]:
-    """PCB 日期：**同时**用 PaddleOCR 和 Qwen-VL 大模型识别，再综合两者结果。
-
-    PCB 丝印低对比度，PaddleOCR 常读不出、大模型更稳；两路并跑后按规则综合：
-      - 两者都读出且一致 → 采用该值（最可信）。
-      - 只有一方读出 → 采用那一个。
-      - 两者都读出但不一致 → 采用大模型值（对低对比度更可靠），并标注冲突待人工确认。
-      - 都没读出 → 未识别。
-    """
+    """仅用本地 PaddleOCR 读取 PCB 日期，未读出则转人工复核。"""
     if current_year is None:
         current_year = datetime.date.today().year
 
-    # 1) PaddleOCR
-    ocr_yw = ocr_raw = None
-    ocr_box = None
     picked = _pick_chip_date(recognize(image_path), current_year)
     if picked:
-        ocr_raw, ocr_yw, ocr_box, _ = picked
-
-    # 2) Qwen-VL 大模型（含大模型自评置信度）
-    from ..inspection.quality_inspect import read_yyww_vl
-    vl_digits, vl_text, vl_conf = read_yyww_vl(image_path)
-    vl_yw = None
-    if vl_digits:
-        vl_yw = _decode_yyww(vl_digits, current_year)
-    vl_pct = round(vl_conf * 100)
-
-    def _emit(y, w, raw, src, note, conf, mc=None):
+        raw, (year, week), box, source = picked
         return [DateCode(
-            raw=raw, code_type="pcb", year=y, week=w,
-            week_start=_week_start_date(y, w), confidence=conf,
-            source_text=src, box=ocr_box, digit_format="YYWW",
-            status="ok", note=note, model_confidence=mc)]
-
-    o = f"OCR={ocr_raw}" if ocr_yw else "OCR未读出"
-    v = f"大模型={vl_digits}(置信{vl_pct}%)" if vl_yw else "大模型未读出"
-    src = f"{o}；{v}"
-
-    if ocr_yw and vl_yw:
-        if ocr_yw == vl_yw:
-            return _emit(*ocr_yw, ocr_raw, src,
-                         f"PaddleOCR 与大模型一致（{ocr_raw}，大模型置信 {vl_pct}%）", 0.98, vl_conf)
-        # 不一致：取大模型，标冲突
-        y, w = vl_yw
-        return _emit(y, w, vl_digits, src,
-                     f"两者不一致：OCR={ocr_raw} / 大模型={vl_digits}(置信{vl_pct}%)，取大模型，请人工确认",
-                     0.5, vl_conf)
-    if ocr_yw:
-        return _emit(*ocr_yw, ocr_raw, src, "仅 PaddleOCR 识别出", 0.85, None)
-    if vl_yw:
-        y, w = vl_yw
-        return _emit(y, w, vl_digits, src,
-                     f"仅大模型识别出（PCB 丝印低对比度），大模型置信 {vl_pct}%", 0.85, vl_conf)
+            raw=raw, code_type="pcb", year=year, week=week,
+            week_start=_week_start_date(year, week), confidence=0.85,
+            source_text=source, box=box, digit_format="YYWW", status="ok")]
 
     return [DateCode(
         raw="", code_type="pcb", year=0, week=0, week_start="",
-        confidence=0.0, source_text=src, box=ocr_box, status="unknown",
-        note="PaddleOCR 与大模型都未读出，请重拍更清晰的丝印特写")]
+        confidence=0.0, source_text="", box=None, status="unknown",
+        note="本地 OCR 未读出，请重拍更清晰的丝印特写或人工复核")]

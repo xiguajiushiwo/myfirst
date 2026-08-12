@@ -14,6 +14,9 @@ import numpy as np
 
 _ocr = None
 _lock = threading.Lock()
+_component_ocr = None
+_component_lock = threading.Lock()
+_predict_lock = threading.Lock()
 # 默认服务端高精度模型 + 高分辨率检测 + 分块识别：
 # 内存条满板密集小字(每颗 DRAM 一个"SEC 534")，整图一次识别会漏检；
 # 切成若干横条分别识别再合并去重，召回大幅提升（实测正反两面 27→35 颗粒全中）。
@@ -73,10 +76,12 @@ def _effective_device() -> str:
     return "cpu"
 
 
-def _build_ocr():
+def _build_ocr(device_override: Optional[str] = None,
+               use_server_models: Optional[bool] = None):
     from paddleocr import PaddleOCR
 
-    device = _effective_device()
+    device = device_override or _effective_device()
+    server_models = _config["use_server_models"] if use_server_models is None else use_server_models
     kwargs = dict(
         lang=_config["lang"],
         use_doc_orientation_classify=False,  # 整图方向分类，单芯片照片用不上
@@ -102,7 +107,7 @@ def _build_ocr():
         threads = int(os.environ.get("OCR_CPU_THREADS", "0") or 0)
         if threads > 0:
             kwargs["cpu_threads"] = threads
-    if _config["use_server_models"]:
+    if server_models:
         # 服务端模型精度更高，适合小字/低对比度芯片丝印
         det_name, rec_name = "PP-OCRv5_server_det", "PP-OCRv5_server_rec"
         kwargs.update(
@@ -123,6 +128,16 @@ def get_engine():
             if _ocr is None:
                 _ocr = _build_ocr()
     return _ocr
+
+
+def get_component_engine():
+    """PCB/主控专用 CPU 中型模型，避开当前 GPU/CUDNN 组合的随机小图误读。"""
+    global _component_ocr
+    if _component_ocr is None:
+        with _component_lock:
+            if _component_ocr is None:
+                _component_ocr = _build_ocr(device_override="cpu", use_server_models=False)
+    return _component_ocr
 
 
 def _poly_to_box(poly) -> list:
@@ -204,8 +219,11 @@ def _nms(detections: list[dict], iou_thresh: float = 0.35) -> list[dict]:
 
 def _predict_array(engine, arr):
     out = []
-    for res in engine.predict(input=arr):
-        out.extend(_extract(res))
+    # PaddleOCR/Paddle Inference 的同一个 predictor 不能被多个线程同时调用。
+    # 正反面并行识别若共享单例引擎，会出现文本结果串到另一张图、随机假日期等问题。
+    with _predict_lock:
+        for res in engine.predict(input=arr):
+            out.extend(_extract(res))
     return out
 
 

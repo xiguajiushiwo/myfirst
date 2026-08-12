@@ -79,6 +79,7 @@ def _connect(with_db: bool = True):
 # inspection_records 除 id/created_at 外的全部列（含 Phase 2 追溯图片列）。
 # 用于**增量迁移**：缺哪列就 ALTER 补哪列，绝不 DROP，改表不丢历史数据。
 _RECORD_COLUMNS = {
+    "batch_id": "INT DEFAULT NULL",
     "operator": "VARCHAR(64) DEFAULT ''",
     "sn": "VARCHAR(128) DEFAULT ''",
     "brand": "VARCHAR(64) DEFAULT ''",
@@ -113,7 +114,7 @@ _RECORD_COLUMNS = {
     "slot_pos": "INT DEFAULT NULL",
     # 单次手动检测追踪：同一盘四根共享 inspection_id / timing / token_usage
     "inspection_id": "VARCHAR(32) DEFAULT ''",
-    "recognition_mode": "VARCHAR(16) DEFAULT 'rules'",
+    "recognition_mode": "VARCHAR(16) DEFAULT 'geo'",
     "timing": "JSON",
     "elapsed_sec": "DECIMAL(10,3) DEFAULT 0",
     "token_usage": "JSON",
@@ -543,14 +544,15 @@ def save_record(rec: dict) -> int:
         with conn.cursor() as cur:
             cur.execute("""
                 INSERT INTO inspection_records
-                    (operator, sn, brand, model, frequency, spec, mfg,
+                    (batch_id, operator, sn, brand, model, frequency, spec, mfg,
                      controller_date, pcb_date, storage_chips, storage_count,
                      comp_ok, gold_finger_ok, chip_mark_ok, date_ok,
                      verdict, fail_desc, review_status,
                      front_img, back_img, annotated_front, annotated_back,
                      customer, supplier, capacity, batch_no, cond, remark, slot_pos,
                      inspection_id, recognition_mode, timing, elapsed_sec, token_usage, label_data)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""", (
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""", (
+                int(rec.get("batch_id") or 0) or None,
                 (rec.get("operator") or "").strip(),
                 (rec.get("sn") or "").strip(),
                 (rec.get("brand") or "").strip(),
@@ -581,7 +583,7 @@ def save_record(rec: dict) -> int:
                 (rec.get("remark") or "").strip()[:255],
                 rec.get("slot_pos") if rec.get("slot_pos") else None,
                 (rec.get("inspection_id") or "").strip()[:32],
-                (rec.get("recognition_mode") or "rules").strip()[:16],
+                (rec.get("recognition_mode") or "geo").strip()[:16],
                 json.dumps(rec.get("timing") or {}, ensure_ascii=False),
                 float(rec.get("elapsed_sec") or 0),
                 json.dumps(rec.get("token_usage") or {}, ensure_ascii=False),
@@ -630,7 +632,7 @@ def update_review(record_id: int, status: str) -> bool:
 
 
 _REC_SELECT = """
-    SELECT id, created_at, operator, sn, brand, model, frequency,
+    SELECT id, created_at, batch_id, operator, sn, brand, model, frequency,
            spec, mfg,
            controller_date, pcb_date, storage_chips, storage_count,
            comp_ok, gold_finger_ok, chip_mark_ok, date_ok,
@@ -678,14 +680,29 @@ def list_records_by_sn(sn: str) -> list[dict]:
     return _query_records(" WHERE sn=%s ORDER BY id DESC LIMIT 200", [(sn or "").strip()])
 
 
+def list_records_by_batch(batch_id: int, limit: int = 1000) -> list[dict]:
+    """采购订单下的全部质检记录；兼容早期仅保存订单号、未保存 batch_id 的记录。"""
+    return _query_records(
+        " WHERE batch_id=%s OR (batch_id IS NULL AND batch_no=(SELECT batch_no FROM batches WHERE id=%s))"
+        " ORDER BY id DESC LIMIT %s",
+        [int(batch_id), int(batch_id), int(limit)],
+    )
+
+
 def list_records_filtered(customer=None, batch_no=None, verdict=None,
-                          date_from=None, date_to=None, limit=2000) -> list[dict]:
+                          date_from=None, date_to=None, limit=2000,
+                          batch_id=None, supplier=None) -> list[dict]:
     """按 客户/批次/判定/日期 过滤（用于报表导出）。空条件即忽略。"""
     where, params = [], []
     if customer:
         where.append("customer=%s"); params.append(customer)
+    if supplier:
+        where.append("(supplier=%s OR batch_id IN (SELECT id FROM batches WHERE supplier=%s))")
+        params.extend([supplier, supplier])
     if batch_no:
         where.append("batch_no=%s"); params.append(batch_no)
+    if batch_id:
+        where.append("batch_id=%s"); params.append(int(batch_id))
     if verdict:
         where.append("verdict=%s"); params.append(verdict)
     if date_from:
@@ -790,7 +807,8 @@ def get_batch(batch_id: int) -> dict | None:
                         "b.kd_return_qty, b.active, "
                         "COUNT(r.id) AS total, COALESCE(SUM(r.verdict='pass'),0) AS passed "
                         "FROM batches b "
-                        "LEFT JOIN inspection_records r ON r.batch_no=b.batch_no AND b.batch_no<>'' "
+                        "LEFT JOIN inspection_records r ON "
+                        "(r.batch_id=b.id OR (r.batch_id IS NULL AND r.batch_no=b.batch_no AND b.batch_no<>'')) "
                         "WHERE b.id=%s GROUP BY b.id", (int(batch_id),))
             r = cur.fetchone()
     finally:
@@ -841,7 +859,7 @@ def list_batches(limit: int = 100) -> list[dict]:
                        COALESCE(SUM(r.verdict='pass'),0) AS passed
                 FROM batches b
                 LEFT JOIN inspection_records r
-                       ON r.batch_no=b.batch_no AND b.batch_no<>''
+                       ON (r.batch_id=b.id OR (r.batch_id IS NULL AND r.batch_no=b.batch_no AND b.batch_no<>''))
                 GROUP BY b.id ORDER BY b.id DESC LIMIT %s""", (int(limit),))
             rows = cur.fetchall()
     finally:

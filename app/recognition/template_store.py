@@ -80,6 +80,10 @@ def list_templates() -> list[dict]:
             "model": tpl.get("model", ""),
             "note": tpl.get("note", ""),
             "created": tpl.get("created", ""),
+            "calibrated": tpl.get("calibrated", True) is not False,
+            "capacity": tpl.get("capacity", ""),
+            "frequency": tpl.get("frequency", ""),
+            "requirements": tpl.get("requirements", []),
             "counts": _counts(tpl),
         })
     items.sort(key=lambda x: (x["brand"], x["model"], x["id"]))
@@ -100,9 +104,14 @@ def get_template(template_id: str) -> Optional[dict]:
 
 
 def default_template_id() -> Optional[str]:
-    """识别时未指定模板时的兜底（取列表第一个）。"""
-    items = list_templates()
+    """识别时未指定模板时的兜底（只取已标定模板）。"""
+    items = [item for item in list_templates() if item.get("calibrated")]
     return items[0]["id"] if items else None
+
+
+def is_calibrated(template_id: str) -> bool:
+    tpl = get_template(template_id)
+    return bool(tpl and tpl.get("calibrated", True) is not False)
 
 
 def delete_template(template_id: str) -> bool:

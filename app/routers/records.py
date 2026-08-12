@@ -115,13 +115,28 @@ def records_by_sn(sn: str):
         return JSONResponse({"sn": sn, "records": [], "error": str(e)}, status_code=200)
 
 
+@router.get("/api/records/by_order/{batch_id}")
+def records_by_order(batch_id: int, limit: int = 1000):
+    """按采购订单返回记录及其归档照片，供订单级照片墙使用。"""
+    try:
+        batch = db.get_batch(batch_id)
+        if not batch:
+            return JSONResponse({"ok": False, "error": "采购订单不存在"}, status_code=404)
+        records = db.list_records_by_batch(batch_id, limit=min(max(1, limit), 5000))
+        return {"ok": True, "order": batch, "records": records, "count": len(records)}
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"ok": False, "records": [], "error": str(e)}, status_code=200)
+
+
 @router.get("/api/records/export")
 def export_records(format: str = "xlsx", customer: str = "", batch_no: str = "",
-                   verdict: str = "", date_from: str = "", date_to: str = "", limit: int = 2000):
+                   verdict: str = "", date_from: str = "", date_to: str = "", limit: int = 2000,
+                   batch_id: int | None = None, supplier: str = ""):
     """按筛选条件导出质检记录（xlsx / csv）供对账/质检报告。"""
     try:
         rows = db.list_records_filtered(customer or None, batch_no or None, verdict or None,
-                                        date_from or None, date_to or None, limit)
+                                        date_from or None, date_to or None, limit,
+                                        batch_id=batch_id, supplier=supplier or None)
     except Exception as e:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 

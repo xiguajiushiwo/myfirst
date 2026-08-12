@@ -1,0 +1,17 @@
+{
+  "id": "hynix-64gb-5600-pending",
+  "brand": "SK Hynix",
+  "model": "SK Hynix 64GB DDR5-5600 RDIMM 4up",
+  "capacity": "64GB",
+  "frequency": "5600",
+  "calibrated": false,
+  "note": "待实拍图标定。未确认颗粒排布、日期码格式、PCB日期位置、主控位置和标签遮挡情况前禁止用于正式检测。",
+  "requirements": [
+    "同一相机、托盘、曝光和方向下的四槽正面原图",
+    "同一盘内存条对应的四槽反面原图",
+    "至少一张可肉眼看清颗粒丝印、PCB日期和主控丝印的原始分辨率图片",
+    "确认海力士颗粒日期码示例以及正确年周答案"
+  ],
+  "created": "2026-08-12",
+  "sides": {}
+}

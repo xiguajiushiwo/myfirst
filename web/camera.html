@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>实时质检监控 · 云小圈AI硬件质检系统</title>
 <link rel="icon" type="image/png" href="/favicon.png" />
+<script src="/sync-alert.js" defer></script>
 <style>
   :root{
     --ink:#17202f;
@@ -491,6 +492,10 @@
     transition:.2s;
   }
   .toast.show{opacity:1;transform:none}
+  .product-profile{margin:0 24px 14px;padding:12px 15px;border:1px solid #b9d5fb;border-left:4px solid var(--blue);border-radius:8px;background:#f5f9ff;font-size:13px;color:var(--ink)}
+  .product-profile strong{font-weight:850}.product-profile .meta{color:var(--muted);margin-left:8px}
+  .product-profile.blocked{border-color:#f0aaa5;border-left-color:#d93025;background:#fff5f4;color:#8f1d17}
+  .product-profile ul{margin:7px 0 0 20px;padding:0;color:#69413d}
 </style>
 </head>
 <body>
@@ -507,6 +512,7 @@
   <a class="navbtn" href="/workbench">返回工作台</a>
   <a class="navbtn" href="/">首页</a>
 </div>
+<div class="product-profile" id="product-profile">正在读取当前采购订单和识别模板…</div>
 
 <main class="wrap">
   <section class="hero">
@@ -578,7 +584,7 @@
           </div>
           <div class="run-summary" id="run-summary">
             <div class="run-kv"><strong>--</strong>单次检测耗时</div>
-            <div class="run-kv"><strong>0</strong>本次 Token</div>
+            <div class="run-kv"><strong>本地</strong>识别方式</div>
             <div class="run-stages">等待手动拍照检测</div>
           </div>
         </div>
@@ -605,7 +611,7 @@
               <th>SN / 原因</th>
               <th style="width:82px">颗粒</th>
               <th style="width:82px">耗时</th>
-              <th style="width:82px">Token</th>
+              <th style="width:82px">方式</th>
             </tr>
           </thead>
           <tbody id="history-body">
@@ -625,8 +631,9 @@
           <div class="field">
             <label for="mode">识别方式</label>
             <select id="mode">
-              <option value="rules" selected>规则识别（整图找日期）</option>
-              <option value="geo">几何定位（现算框，含 PCB/PMIC/SOT）</option>
+              <option value="geo" selected>整合识别（逐槽读取颗粒、PCB、可见主控）</option>
+              <option value="rules">旧规则识别（整图找日期，不拆槽）</option>
+              <option value="template">模板识别（兼容入口，实际使用整合识别）</option>
             </select>
           </div>
           <div class="field">
@@ -702,7 +709,11 @@ const state = {
   cameraMode: "dual",
   cameraBackend: "hik",
   activeRoles: ["front", "back"],
-  singleCapture: null
+  singleCapture: null,
+  batchId: "",
+  batchNo: "",
+  templateReady: false,
+  templateId: ""
 };
 const previewView = {
   front: { scale: 1, x: 0, y: 0, dragging: false, sx: 0, sy: 0, ox: 0, oy: 0 },
@@ -742,7 +753,7 @@ function singleOneShot(){
   return !el || el.value !== "two";
 }
 function setBusy(busy, label){
-  $("manual-go").disabled = busy;
+  $("manual-go").disabled = busy || !state.templateReady;
   if(busy){ $("manual-go").textContent = label || "检测中"; return; }
   if(state.singleCapture){ $("manual-go").textContent = "已拍正面，翻面后继续"; return; }
   $("manual-go").textContent = state.cameraMode === "single"
@@ -844,12 +855,51 @@ async function loadTemplates(){
     const d = await (await fetch("/api/templates")).json();
     const sel = $("template-id");
     const list = d.templates || [];
-    sel.innerHTML = '<option value="">默认模板</option>' + list.map(t => {
+    sel.innerHTML = '<option value="">按采购订单自动选择</option>' + list.map(t => {
       const id = t.id || t.template_id || "";
-      const name = t.name || t.label || id;
-      return `<option value="${esc(id)}">${esc(name)}</option>`;
+      const name = t.model || t.name || t.label || id;
+      const stateText = t.calibrated === false ? "（待标定）" : "";
+      return `<option value="${esc(id)}"${t.calibrated===false?' disabled':''}>${esc(name+stateText)}</option>`;
     }).join("");
   }catch(_){}
+}
+
+async function loadProductProfile(){
+  const box = $("product-profile");
+  state.batchId = (localStorage.getItem("batch_id") || "").trim();
+  state.batchNo = (localStorage.getItem("batch_no") || "").trim();
+  state.templateReady = false;
+  state.templateId = "";
+  if(!state.batchId){
+    box.className = "product-profile blocked";
+    box.innerHTML = '<strong>未选择采购订单</strong><span class="meta">请先到采购订单页选择订单，再进行拍照检测。</span>';
+    setBusy(false);
+    $("manual-go").disabled = true;
+    return;
+  }
+  try{
+    const d = await (await fetch('/api/templates/for_order/' + encodeURIComponent(state.batchId), {cache:'no-store'})).json();
+    if(!d.ok) throw new Error(d.error || '订单模板读取失败');
+    const order = d.order || {}, tpl = d.template || {};
+    state.batchNo = order.batch_no || state.batchNo;
+    if(d.ready){
+      state.templateReady = true;
+      state.templateId = tpl.id || "";
+      $("template-id").value = state.templateId;
+      box.className = "product-profile";
+      box.innerHTML = `<strong>${esc(state.batchNo || ('订单 #'+state.batchId))}</strong><span class="meta">${esc(tpl.model || tpl.brand || '')} · ${esc(tpl.capacity || '')} · ${esc(tpl.frequency || '')} · 模板已标定</span>`;
+      setBusy(false);
+    }else{
+      const requirements = (tpl.requirements || []).map(x=>`<li>${esc(x)}</li>`).join('');
+      box.className = "product-profile blocked";
+      box.innerHTML = `<strong>${esc(state.batchNo || ('订单 #'+state.batchId))} 暂不能检测</strong><span class="meta">${esc(d.error || '模板未标定')}</span>${requirements?'<ul>'+requirements+'</ul>':''}`;
+      $("manual-go").disabled = true;
+    }
+  }catch(e){
+    box.className = "product-profile blocked";
+    box.innerHTML = '<strong>订单模板读取失败</strong><span class="meta">'+esc(e.message||e)+'</span>';
+    $("manual-go").disabled = true;
+  }
 }
 
 async function camStatus(){
@@ -983,18 +1033,21 @@ async function setOrient(side, mode, notify = true){
 
 function buildForm(){
   const fd = new FormData();
-  fd.append("mode", ($("mode") && $("mode").value) || "rules");
+  // 默认整合识别：逐槽同时读取正反面颗粒、PCB 和未被标签遮挡的主控。
+  fd.append("mode", ($("mode") && $("mode").value) || "geo");
   fd.append("operator", state.operator || "");
-  const tpl = $("template-id").value;
+  const tpl = state.templateId || $("template-id").value;
   const th = $("threshold").value;
   const y = $("year").value;
   if(tpl) fd.append("template_id", tpl);
+  if(state.batchId) fd.append("batch_id", state.batchId);
   if(th !== "") fd.append("threshold", th);
   if(y !== "") fd.append("current_year", y);
   return fd;
 }
 
 async function manualCapture(){
+  if(!state.templateReady){toast("当前订单的识别模板尚未准备好");return;}
   if(state.cameraMode === "single"){
     return manualSingleCapture();
   }
@@ -1170,13 +1223,13 @@ function sec(v){ return Number.isFinite(Number(v)) ? Number(v).toFixed(3) + "s" 
 function renderRunSummary(timing, tokenUsage){
   const tm = timing || {}, tk = tokenUsage || {};
   const labels = {capture:"拍照",file_prepare:"图片准备",slot_detect_crop:"槽位/裁图",rule_ocr:"规则OCR",
-    appearance:"外观",label_decode:"二维码",parallel_analysis:"并行分析",archive:"归档",database:"入库"};
+    label_decode:"二维码",local_decode_parallel:"本地解码",parallel_analysis:"并行分析",archive:"归档",database:"入库"};
   const stages = Object.entries(labels).filter(([key]) => tm[key] != null)
     .map(([key,label]) => `${label} ${sec(tm[key])}`).join(" · ");
   $("run-summary").innerHTML = `
     <div class="run-kv"><strong>${sec(tm.total)}</strong>单次检测耗时（墙钟）</div>
-    <div class="run-kv"><strong>${esc(tk.total_tokens || 0)}</strong>本次 Token（${esc(tk.calls || 0)} 次调用）</div>
-    <div class="run-stages">${esc(stages || "等待手动拍照检测")}<br>输入 ${esc(tk.prompt_tokens || 0)} · 输出 ${esc(tk.completion_tokens || 0)}</div>`;
+    <div class="run-kv"><strong>本地 OCR</strong>无大模型调用</div>
+    <div class="run-stages">${esc(stages || "等待手动拍照检测")}</div>`;
 }
 function renderSlots(items){
   renderTrayMap(items);
@@ -1243,7 +1296,7 @@ function renderHistory(){
       <td>${esc(info)}</td>
       <td>${esc(row.storageCount || "-")}</td>
       <td>${sec((row.timing || {}).total)}</td>
-      <td>${esc((row.tokenUsage || {}).total_tokens || 0)}</td>
+      <td>本地</td>
     </tr>`;
   }).join("");
 }
@@ -1260,9 +1313,15 @@ function renderAnnotated(d){
   }
   // 有图才展开：标注图是人工复核盲点的主要依据，藏起来等于让操作员没法核对。
   if(sect) sect.classList.add("has-annotated");
+  // 图没换就不重建 DOM：轮询每次 innerHTML 重建 + 带新时间戳会绕过缓存重下几 MB 大图，
+  // 加载期间图片区空白 → 页面周期性闪。用 URL 组合当指纹去重。
+  const imgKey = imgs.map(x => x.url).join("|");
+  if($("annotated-box").dataset.imgKey === imgKey) return;
+  $("annotated-box").dataset.imgKey = imgKey;
   $("image-note").textContent = timeText() + "（点图可放大看框）";
+  const bust = Date.now();      // 只在图真的换了时取一次，保证新图不吃旧缓存
   $("annotated-box").innerHTML = '<div class="image-pair">' + imgs.map(x =>
-    `<a href="${esc(x.url)}" target="_blank" title="${esc(x.title)}"><img src="${esc(x.url)}?t=${Date.now()}" alt="${esc(x.title)}"></a>`
+    `<a href="${esc(x.url)}" target="_blank" title="${esc(x.title)}"><img src="${esc(x.url)}?t=${bust}" alt="${esc(x.title)}"></a>`
   ).join("") + '</div>';
 }
 
@@ -1359,7 +1418,7 @@ $("settings-toggle").onclick = () => document.body.classList.toggle("settings-op
 $("settings-backdrop").onclick = () => document.body.classList.remove("settings-open");
 
 initOperator();
-loadTemplates();
+loadTemplates().then(loadProductProfile);
 bindPreviewTools("front");
 bindPreviewTools("back");
 camStatus();

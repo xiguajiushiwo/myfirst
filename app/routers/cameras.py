@@ -60,7 +60,7 @@ def camera_preview(side: str):
 def camera_capture(
     current_year: int | None = Form(None),
     template_id: str | None = Form(None),
-    mode: str | None = Form("rules"),
+    mode: str | None = Form("geo"),
     threshold: float | None = Form(None),
 ):
     """手动拍照：抓取正/背面两台相机当前帧 → 识别 + 外观质检 + 读标签。"""
@@ -255,7 +255,7 @@ def hik_single_capture_back_and_save(
     front_capture_sec: float = Form(0),
     backend: str = Form("hik"),
     operator: str = Form(""),
-    mode: str = Form("rules"),
+    mode: str = Form("geo"),
     template_id: str | None = Form(None),
     current_year: int | None = Form(None),
     threshold: float | None = Form(None),
@@ -263,7 +263,7 @@ def hik_single_capture_back_and_save(
 ):
     """单相机第二步：同一相机拍反面，然后识别并入库。
 
-    mode: "rules"（默认，原有行为）/ "geo"（几何定位，框每张图现算、多读 PMIC/SOT）。
+    mode: "geo"（默认，逐槽整合颗粒/PCB/主控）/ "rules"（旧整图规则识别）。
     """
     from ..pipeline.feeder import Job
 
@@ -310,7 +310,7 @@ def hik_single_capture_back_and_save(
 def hik_single_capture_and_save(
     backend: str = Form("hik"),
     operator: str = Form(""),
-    mode: str = Form("rules"),
+    mode: str = Form("geo"),
     template_id: str | None = Form(None),
     current_year: int | None = Form(None),
     threshold: float | None = Form(None),
@@ -324,7 +324,7 @@ def hik_single_capture_and_save(
 
     只有一张图时下游天然降级、不需要额外分支：
       `_pre_crops` 逐面取图，back 没路径就不参与占位检测（槽位仍由正面定出）；
-      `inspect_module` 允许只给一张；`_read_label` 本来只读正面。
+      当前仅运行本地日期 OCR 与正面二维码解码。
     **代价要说清**：反面那 80 颗颗粒和 PCB/PMIC 这次完全没看 —— 按铁律这不是
     "合格"，是"没检查"。所以返回里带 `single_side` 与 `single_side_warn`，
     前端必须显示，避免把"只查了一面"当成整根都合格。
@@ -338,8 +338,8 @@ def hik_single_capture_and_save(
         except Exception:  # noqa: BLE001
             pass
 
-    # 只认 rules / geo，别的值（含 template）一律落回 rules，与另两条入口同口径
-    mode = "geo" if (mode or "").lower() == "geo" else "rules"
+    # 缺省及旧前端传来的 template 都统一走整合识别；仅显式 rules 才走旧模式。
+    mode = "rules" if (mode or "").lower() == "rules" else "geo"
     total_started = time.perf_counter()
     try:
         with _MANUAL_INSPECTION_LOCK:
@@ -373,7 +373,7 @@ def hik_single_capture_and_save(
         result["elapsed_sec"] = tm["total"]
         result["camera_mode"] = "single"
         result["single_side"] = True
-        result["single_side_warn"] = "本次只拍了一面，另一面的颗粒与 PCB/PMIC 未检查，需人工确认"
+        result["single_side_warn"] = "本次只拍正面：反面存储颗粒与 PCB 未检查；正面被标签遮挡的主控不做 OCR，需人工确认"
         record_ids = [s.get("record_id") for s in result.get("sticks") or [] if s.get("record_id")]
         if result.get("record_id"):
             record_ids.append(result["record_id"])
@@ -382,7 +382,7 @@ def hik_single_capture_and_save(
     return JSONResponse(result)
 
 
-def _capture_and_analyze(operator="", mode="rules", template_id=None,
+def _capture_and_analyze(operator="", mode="geo", template_id=None,
                          current_year=None, threshold=None, batch_id=None, save=True) -> dict:
     """双相机同时拍正反 → `analyze_and_save`（拆 N 条，逐根读二维码）。
 
@@ -399,10 +399,10 @@ def _capture_and_analyze(operator="", mode="rules", template_id=None,
             pass
 
     total_started = time.perf_counter()
-    # 只认 rules / geo；别的值（含 template）一律落回 rules。
+    # 缺省及旧前端传来的 template 都统一走整合识别；仅显式 rules 才走旧模式。
     # 收窄在这里做一次，`analyze_and_save` 里还会再收窄一次 —— 两处都留着，
     # 因为那个函数也被别的调用方直接用。
-    mode = "geo" if (mode or "").lower() == "geo" else "rules"
+    mode = "rules" if (mode or "").lower() == "rules" else "geo"
     d, seq = _next_seq_dir()
     fp = os.path.join(d, "front.jpg")
     bp = os.path.join(d, "back.jpg")
@@ -435,7 +435,7 @@ def _capture_and_analyze(operator="", mode="rules", template_id=None,
 @router.post("/api/hik/capture_and_save")
 def hik_capture_and_save(
     operator: str = Form(""),
-    mode: str = Form("rules"),
+    mode: str = Form("geo"),
     template_id: str | None = Form(None),
     current_year: int | None = Form(None),
     threshold: float | None = Form(None),
@@ -444,7 +444,7 @@ def hik_capture_and_save(
 ):
     """**一键：双相机同时拍正反 → 识别 → 拆 N 条入库**（放盘→双拍→识别 一步到位）。
 
-    mode: "rules"（默认，原有行为）/ "geo"（几何定位，框每张图现算、多读 PMIC/SOT）。
+    mode: "geo"（默认，逐槽整合颗粒/PCB/主控）/ "rules"（旧整图规则识别）。
     """
     try:
         with _MANUAL_INSPECTION_LOCK:
@@ -461,7 +461,7 @@ def hik_capture_and_save(
 @router.post("/api/hik/auto/start")
 def hik_auto_start(
     operator: str = Form(""),
-    mode: str = Form("rules"),
+    mode: str = Form("geo"),
     template_id: str | None = Form(None),
     current_year: int | None = Form(None),
     threshold: float | None = Form(None),
@@ -489,7 +489,7 @@ def hik_auto_status():
 @router.post("/api/hik/recognize")
 def hik_recognize(
     uid: str = Form(...),
-    mode: str | None = Form("rules"),
+    mode: str | None = Form("geo"),
     template_id: str | None = Form(None),
     current_year: int | None = Form(None),
     threshold: float | None = Form(None),
@@ -517,7 +517,7 @@ def hik_recognize(
 @router.post("/api/hik/capture_both_recognize")
 def hik_capture_both_recognize(
     operator: str = Form(""),
-    mode: str = Form("rules"),
+    mode: str = Form("geo"),
     template_id: str | None = Form(None),
     current_year: int | None = Form(None),
     threshold: float | None = Form(None),
@@ -528,7 +528,7 @@ def hik_capture_both_recognize(
     返回结构与 /api/hik/capture_and_save 一致（多根 `sticks` 各带自己的 SN），前端复用
     renderCaptureSaveResult 显示全部 N 个二维码/SN。确认无误后再走入库。
     托盘模板仅提供四槽几何位置，供逐根裁图和二维码解码。
-    mode: "rules"（默认，原有行为）/ "geo"（几何定位，框每张图现算、多读 PMIC/SOT）。
+    mode: "geo"（默认，逐槽整合颗粒/PCB/主控）/ "rules"（旧整图规则识别）。
     """
     try:
         with _MANUAL_INSPECTION_LOCK:

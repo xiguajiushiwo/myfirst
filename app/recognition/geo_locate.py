@@ -244,7 +244,8 @@ def band_gap(particles: list) -> tuple | None:
 
 # ---------------------------------------------------------------- 对外入口
 
-def locate(img: Image.Image, want_bands: int = 4) -> dict:
+def locate(img: Image.Image, want_bands: int = 4,
+           tpl_fixed: dict | None = None) -> dict:
     """定位一整盘。返回
 
         {"size": [W, H],
@@ -255,6 +256,12 @@ def locate(img: Image.Image, want_bands: int = 4) -> dict:
 
     坐标一律整图像素。`fixed` 里**可能缺 key** —— 颗粒不足定不出中部带间隙时
     pcb 框直接不出，让上层标盲点转人工，而不是回退到会漂的固定比例后读错。
+
+    tpl_fixed：**人工标定的模板框**（混合模式用），形如
+        {1: {"pcb": [x0,y0,x1,y1]}, 2: {...}}   槽号 1 起、整图归一化坐标
+    给了就**优先用它**，不再按颗粒网格现算 —— 因为 PCB/主控 丝印对比度太低、
+    自动定位不可靠（实测四槽只有一槽能被 OCR 扫到），而人工标一次就能长期用。
+    颗粒仍然每张图现算（固定颗粒框换相机/挪托盘就全废）。
     """
     a = np.asarray(img.convert("RGB"))
     H, W = a.shape[:2]
@@ -270,7 +277,14 @@ def locate(img: Image.Image, want_bands: int = 4) -> dict:
         parts = find_particles(a[:, x0:x1], bw)
         gap = band_gap(parts)
         fixed = {}
+        # 混合模式：有人工标定的模板框就直接用（整图归一化 → 像素），不走现算。
+        tf = (tpl_fixed or {}).get(si) or {}
+        for name, box in tf.items():
+            fixed[name] = [int(box[0] * W), int(box[1] * H),
+                           int(box[2] * W), int(box[3] * H)]
         for name, (fx0, fx1, fy0, fy1) in FIXED.items():
+            if name in fixed:                 # 模板已给，别用现算覆盖
+                continue
             rel = BAND_REL.get(name)
             if rel is not None:
                 if gap is None:

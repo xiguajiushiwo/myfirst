@@ -30,26 +30,20 @@ def test_rule_codes_are_assigned_to_physical_slots():
     assert core["stick_total"] == 2
 
 
-def test_parallel_label_and_appearance_use_wall_clock(monkeypatch):
-    def inspect(*_args):
-        time.sleep(0.05)
-        return {"ok": True}
-
+def test_parallel_local_label_decode_uses_wall_clock(monkeypatch):
     def label(_path):
         time.sleep(0.05)
         return {"sn": "SN1", "src": "barcode"}
 
-    monkeypatch.setattr(services, "inspect_module", inspect)
     monkeypatch.setattr(services, "_read_label", label)
     crops = {slot: (f"front-{slot}", f"back-{slot}") for slot in range(4)}
     started = time.perf_counter()
-    insps, labels, timing, _ = services._vl_branch(crops)
+    labels, timing, _ = services._local_label_branch(crops)
     elapsed = time.perf_counter() - started
 
-    assert len(insps) == len(labels) == 4
+    assert len(labels) == 4
     assert elapsed < 0.2
-    assert timing["inspect_label_parallel"] < 0.2
-    assert timing["appearance"] >= 0.045
+    assert timing["local_decode_parallel"] < 0.2
     assert timing["label_decode"] >= 0.045
 
 
@@ -61,3 +55,17 @@ def test_record_keeps_complete_barcode_payload():
     rec = services.build_record({"dates": {}}, {}, label, "tester")
     assert rec["label_data"]["raw"] == label["raw"]
     assert rec["label_data"]["sn"] == "ABC123"
+
+
+def test_record_verdict_depends_only_on_date():
+    rec = services.build_record(
+        {"dates": {"date_ok": True}},
+        {"ok": True, "comp_ok": False, "appearance_fails": ["外观异常"]},
+        {},
+        "tester",
+    )
+
+    assert rec["verdict"] == "pass"
+    assert rec["comp_ok"] is None
+    assert "外观异常" not in rec["fail_desc"]
+    assert rec["sn_unread"] is True

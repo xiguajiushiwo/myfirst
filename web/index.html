@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>云小圈AI硬件质检系统</title>
 <link rel="icon" type="image/png" href="/favicon.png" />
+<script src="/sync-alert.js" defer></script>
 <style>
   /* ===== 与登录/首页统一：暖橙+蓝渐变背景 + 半透明玻璃卡 ===== */
   :root{
@@ -427,9 +428,9 @@
         <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">
           <label style="display:block;font-size:13px;flex:1;min-width:280px">识别方式
             <select id="mode" style="width:100%;margin-top:3px">
-              <option value="rules">规则识别（整图自动找日期，无需模板）</option>
-              <option value="template" selected>模板识别（按型号固定框，含 PCB 日期框）</option>
-              <option value="geo">几何定位（每张图现算框，逐槽读 颗粒/PCB/PMIC/SOT）</option>
+              <option value="geo" selected>整合识别（逐槽读取颗粒、PCB、可见主控）</option>
+              <option value="rules">旧规则识别（整图找日期，不拆槽）</option>
+              <option value="template">模板识别（兼容入口，实际使用整合识别）</option>
             </select></label>
           <label style="display:block;font-size:13px;flex:1;min-width:220px">型号模板
             <select id="template-id" style="width:100%;margin-top:3px"><option value="">默认模板</option></select></label>
@@ -441,8 +442,7 @@
               <input id="threshold" type="number" value="10" min="0" step="1" style="width:70px"> 周</label>
             <label style="display:flex;gap:8px;align-items:center">年份基准
               <input id="year" type="number" placeholder="自动" style="width:90px"></label>
-            <label style="display:flex;gap:8px;align-items:center" title="识别后让大模型整图数一遍颗粒，检出偏少就提示疑似漏检（多花一次大模型调用）">
-              <input id="vlcheck" type="checkbox"> 整图大模型核对漏检</label>
+            <input id="vlcheck" type="checkbox" style="display:none">
           </div>
         </details>
       </div>
@@ -569,12 +569,12 @@
           </div>
           <!-- 为什么没触发：后端直接给结论 -->
           <div id="af-why"></div>
-          <!-- 链路实时进度：拍照 → OCR → 大模型 → 框图 → 完成（SSE 分步推送） -->
+          <!-- 链路实时进度：拍照 → OCR → 本地解码 → 框图 → 完成（SSE 分步推送） -->
           <div id="pipe-flow" style="display:none">
             <div class="pf-steps">
               <div class="pf-step" data-k="capture"><i>1</i><span>拍照</span></div>
               <div class="pf-step" data-k="recognize"><i>2</i><span>Paddle识别日期</span></div>
-              <div class="pf-step" data-k="inspect"><i>3</i><span>大模型质检+读码</span></div>
+              <div class="pf-step" data-k="inspect"><i>3</i><span>本地二维码解码</span></div>
               <div class="pf-step" data-k="annotate"><i>4</i><span>标注框图+入库</span></div>
               <div class="pf-step" data-k="done"><i>✓</i><span>完成</span></div>
             </div>
@@ -601,12 +601,12 @@
           </div>
         </div>
         <!-- 质检结果（每盘实时刷新：逐槽判定 + 标注框图） -->
-        <div id="hik-dual-result" style="margin-top:6px"><div class="empty" style="padding:26px 10px">检测结果、四槽二维码、耗时和 Token 在手动拍照检测页显示。</div></div>
+        <div id="hik-dual-result" style="margin-top:6px"><div class="empty" style="padding:26px 10px">检测结果、四槽二维码和耗时在手动拍照检测页显示。</div></div>
       </div>
     </div>
 
   <!-- ===== 综合判定 + 标签（已隐藏：元素保留供 JS，自动入库无需人工填标签） ===== -->
-  <div class="sec-h" style="display:none"><h2>综合判定与入库</h2><span class="sub">外观+日期全合格才绿灯 · 核对标签后保存</span></div>
+  <div class="sec-h" style="display:none"><h2>日期判定与入库</h2><span class="sub">当前只按日期规则判定 · 核对标签后保存</span></div>
     <div class="card" style="display:none">
       <div class="body">
         <div id="verdict"><div class="empty" style="padding:26px 6px">选择文件夹识别后，这里给出综合判定。</div></div>
@@ -621,7 +621,7 @@
     </div>
 
   <!-- ===== 识别详情区（已隐藏：元素保留供 JS） ===== -->
-  <div class="sec-h" style="display:none"><h2>识别详情</h2><span class="sub">识别结果 · 外观质检 · 解码汇总</span></div>
+  <div class="sec-h" style="display:none"><h2>识别详情</h2><span class="sub">日期识别结果与解码汇总</span></div>
   <div class="grid" style="display:none">
     <div class="card">
       <h2><span class="ix">2</span>识别结果 <span class="right" id="stat-mini"></span></h2>
@@ -638,9 +638,9 @@
     </div>
 
     <div class="card">
-      <h2><span class="ix">3</span>外观质检 &amp; 解码汇总</h2>
+      <h2><span class="ix">3</span>日期解码汇总</h2>
       <div class="body">
-        <div id="inspect-result"><div class="empty">识别时同时做外观质检（Qwen-VL）。</div></div>
+        <div id="inspect-result"><div class="empty">当前仅做日期识别，外观质检已停用。</div></div>
         <div id="summary" style="margin-top:14px"></div>
       </div>
     </div>
@@ -660,8 +660,8 @@ const modeSel=document.getElementById('mode');
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'),2200);}
 
-/* ===== 综合判定：外观 + 日期 都合格才亮绿灯 ===== */
-const verdictState={date:{done:false,problems:[],note:''},inspect:{done:false,problems:[],note:''}};
+/* ===== 当前判定只依据日期 ===== */
+const verdictState={date:{done:false,problems:[],note:''}};
 function setDateVerdict(d){
   const s=d.signal||{}, dates=d.dates||{};
   const problems=(dates.date_fail||[]).map(x=>'<b>日期</b>：'+x);
@@ -673,23 +673,23 @@ function setDateVerdict(d){
   verdictState.date={done:true,problems,note};renderVerdict();
 }
 function currentVerdict(){
-  const ds=verdictState.date,is=verdictState.inspect;
-  const problems=[...ds.problems,...is.problems];
+  const ds=verdictState.date;
+  const problems=[...ds.problems];
   if(problems.length)return{status:'fail',problems};
-  if(ds.done&&is.done)return{status:'pass',problems:[]};
+  if(ds.done)return{status:'pass',problems:[]};
   return{status:'unknown',problems:[]};
 }
 function renderVerdict(){
   const v=document.getElementById('verdict');
-  const ds=verdictState.date,is=verdictState.inspect;
+  const ds=verdictState.date;
   const cv=currentVerdict();let title,sub;
   if(cv.status==='fail'){title='🔴 不合格';sub='发现以下问题，请人工复核：';}
-  else if(cv.status==='pass'){title='🟢 合格';sub='外观与日期均符合要求';}
-  else{const w=[];if(!is.done)w.push('外观质检');if(!ds.done)w.push('日期识别');title='⏳ 进行中';sub='等待：'+w.join(' / ');}
+  else if(cv.status==='pass'){title='🟢 合格';sub='日期符合要求';}
+  else{title='⏳ 进行中';sub='等待日期识别';}
   let html='<div class="signal '+cv.status+'"><div class="lamp"></div><div>'
     +'<div class="big">'+title+'</div><div class="desc">'+sub+'</div></div></div>';
   if(cv.problems.length){html+='<ul class="problems">'+cv.problems.map(p=>'<li>'+p+'</li>').join('')+'</ul>';}
-  else if(cv.status==='pass'){html+=[ds.note,is.note].filter(Boolean).map(o=>'<div class="okline">✓ '+o+'</div>').join('');}
+  else if(cv.status==='pass'){html+=[ds.note].filter(Boolean).map(o=>'<div class="okline">✓ '+o+'</div>').join('');}
   v.innerHTML=html;
   document.getElementById('save-record').disabled=!lastData;
 }
@@ -708,7 +708,7 @@ function render(d){
   const modeTxt=d.mode==='template'?'模板识别':'规则识别';
   document.getElementById('stat-mini').innerHTML=
     '<span style="color:var(--dim);font-size:12px">'+modeTxt+' · 日期用时 '+(d.ocr_sec!=null?d.ocr_sec:d.elapsed_sec)+'s · 共 '+d.total+' 处</span>';
-  // 整图大模型核对漏检的告警
+  // 本地定位/OCR覆盖告警
   const warns=d.coverage_warn||[];
   document.getElementById('stat').innerHTML = warns.length
     ? '<div style="background:#fff7e6;border:1px solid #f4d58a;color:#b9770a;padding:8px 12px;border-radius:8px;font-size:13px">⚠ 疑似漏检：'+warns.map(w=>w.replace(/</g,'')).join('；')+'</div>'
@@ -735,8 +735,7 @@ function render(d){
       const rows=s.codes.map(c=>{
         const col=COLORS[c.code_type]||COLORS.unknown;
         const lab=statusLabel(c);
-        const byVL=(c.note||'').indexOf('大模型')>=0;
-        const src=byVL?'<span class="badge unclear" title="OCR 置信不足，改由大模型识别">大模型</span>':'';
+        const src='';
         const conf=(c.confidence!=null && c.code_type==='dram')
           ?('<span class="conf">OCR '+Math.round(c.confidence*100)+'%</span>'):'';
         const note=c.note?('<div class="note">'+c.note+'</div>'):'';
@@ -768,41 +767,16 @@ function render(d){
 /* ===== 外观质检渲染 ===== */
 function renderInspect(d){
   const box=document.getElementById('inspect-result');
-  if(!d||!d.ok){
-    verdictState.inspect={done:true,problems:['<b>外观</b>：质检调用失败（'+((d&&d.error)||'调用大模型出错')+'）'],note:''};
-    box.innerHTML='<div class="note" style="font-size:13px">⚠️ 外观质检失败：'+((d&&d.error)||'调用大模型出错')+'</div>';renderVerdict();return;
-  }
-  lastInspect=d;
-  const pass=d.qualified;
-  verdictState.inspect={done:true,
-    problems:(d.appearance_fails||[]).map(r=>'<b>外观</b>：'+r),
-    note:pass?'外观：元器件无损坏/发黑，金手指正常，芯片二维码标记均有线条':''};
-  let html='<div class="times"><span class="timechip">'+(pass?'外观 ✓ 正常':'外观 ✗ 异常')+'</span>'
-    +'<span class="timechip">大模型用时 <b>'+(d.model_sec!=null?d.model_sec:(d.elapsed_sec||'-'))+'s</b></span>'
-    +'<span class="timechip">模型 <b>'+d.model+'</b></span></div>';
-  if(!pass&&d.reasons&&d.reasons.length){html+='<ul class="problems">'+d.reasons.map(x=>'<li>'+x+'</li>').join('')+'</ul>';}
-  const dt=d.details||{};const rows=[];
-  if(dt.components)rows.push(['元器件','损坏:'+yn(dt.components.damaged)+' 发黑:'+yn(dt.components.blackened),dt.components.detail||'']);
-  if(dt.gold_finger)rows.push(['金手指',yn2(dt.gold_finger.normal),dt.gold_finger.detail||'']);
-  if(dt.chip_marks){const abn=dt.chip_marks.all_have_lines===false;
-    rows.push(['芯片二维码标记',abn?'<span style="color:var(--pcb)">出现异常</span>':'均有线条（正常）',dt.chip_marks.detail||'']);}
-  if(rows.length){
-    html+='<details style="margin-top:8px"><summary>大模型明细</summary>'
-      +'<table style="margin:6px 0"><thead><tr><th>检查项</th><th>结论</th><th>说明</th></tr></thead><tbody>'
-      +rows.map(r=>'<tr><td>'+r[0]+'</td><td>'+r[1]+'</td><td style="color:var(--dim)">'+r[2]+'</td></tr>').join('')
-      +'</tbody></table></details>';
-  }
-  box.innerHTML=html;renderVerdict();
+  box.innerHTML='<div class="note" style="font-size:13px">当前仅执行本地日期识别，外观质检未运行。</div>';
 }
 function yn(b){return b?'<span style="color:var(--pcb)">是</span>':'否';}
 function yn2(b){return b===false?'<span style="color:var(--pcb)">否</span>':'是';}
 
-/* 组合渲染：识别 + 外观 + 标签自动填 */
+/* 组合渲染：日期识别 + 本地二维码 */
 function renderCombined(d){
   verdictState.date={done:false,problems:[],note:''};
-  verdictState.inspect={done:false,problems:[],note:''};
   render(d.recognize);
-  if(d.inspect) renderInspect(d.inspect);
+  renderInspect(d.inspect);
   const L=d.label||{};
   if(L.sn)document.getElementById('sn').value=L.sn;
   if(L.brand)document.getElementById('brand').value=L.brand;
@@ -1074,7 +1048,6 @@ async function hikRecognize(){
   if(!window._hikUid || !(window._hikShots&&(window._hikShots.front||window._hikShots.back))){
     alert('请先拍正面/反面');return;}
   const fd=new FormData();fd.append('uid',window._hikUid);fd.append('mode',modeSel.value);{const _tpl=$('template-id');if(_tpl&&_tpl.value)fd.append('template_id',_tpl.value);}
-  if(document.getElementById('vlcheck').checked)fd.append('vl_check','true');
   const y=document.getElementById('year').value;if(y)fd.append('current_year',y);
   const th=document.getElementById('threshold').value;if(th!=='')fd.append('threshold',th);
   const btn=document.getElementById('hik-recog');btn.disabled=true;btn.textContent='识别中…';
@@ -1094,7 +1067,7 @@ document.getElementById('hik-reset').onclick=hikReset;
 /* ===== 托盘双相机：一键 同时拍正反→识别入库（实时取景就在上方，曝光/增益/翻转见「⚙ 相机参数」） ===== */
 // 相机参数（曝光/增益/方向校正）设置服务端全局生效，拍摄自动采用。
 // 把识别到的二维码信息回填到「当前内存条」的框(单根或多根取第一根)
-// SN 只认二维码：解出=绿(可信)；未解出=红+留空(待人工，不填大模型猜的)
+// SN 只认本地二维码：解出=绿；未解出=红并留空待人工。
 function fillLabelFields(d){
   const s=(d && d.multi && Array.isArray(d.sticks) && d.sticks.length) ? d.sticks[0] : d;
   if(!s) return;
@@ -1102,7 +1075,7 @@ function fillLabelFields(d){
   if(snEl){
     if(s.sn){snEl.value=s.sn; snEl.style.borderColor='#12b76a'; snEl.title='SN 来自二维码精确解码（可信）';}
     else if(s.sn_unread){snEl.value=''; snEl.style.borderColor='#d92d2d';
-      snEl.placeholder='⚠ 二维码未解出，SN 待人工补录'; snEl.title='二维码没解开→SN 不采纳大模型猜测，请人工补录';}
+      snEl.placeholder='⚠ 二维码未解出，SN 待人工补录'; snEl.title='本地二维码未解出，请人工补录';}
   }
   if(s.brand)document.getElementById('brand').value=s.brand;
   if(s.model)document.getElementById('model').value=s.model;
@@ -1278,7 +1251,7 @@ function qcSetRunning(on){
     hint.textContent='放好托盘后点「开始质检」，画面静止即自动拍摄识别入库，一盘接一盘无需再点。';
   }
 }
-/* ===== 链路实时进度：拍照→OCR→大模型→框图→完成（SSE stage 事件驱动）===== */
+/* ===== 链路实时进度：拍照→OCR→本地解码→框图→完成（SSE stage 事件驱动）===== */
 const PF_ORDER=['capture','recognize','inspect','annotate','done'];
 let _pfT0=0,_pfTimer=null;
 function pfSetStage(stage,text){

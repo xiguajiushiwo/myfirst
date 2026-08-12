@@ -14,7 +14,7 @@ router = APIRouter()
 @router.post("/api/pipeline/start")
 def pipeline_start(
     operator: str = Form(""),
-    mode: str = Form("rules"),
+    mode: str = Form("geo"),
     template_id: str | None = Form(None),
     current_year: int | None = Form(None),
     threshold: float | None = Form(None),

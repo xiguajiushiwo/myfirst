@@ -6,6 +6,7 @@
 <title>质检管理看板 · 云小圈AI硬件质检系统</title>
 <link rel="icon" href="/favicon.png">
 <link rel="stylesheet" href="/app.css">
+<script src="/sync-alert.js" defer></script>
 <style>
 .rec-detail{margin-top:6px;font-size:13px}
 .rec-detail summary{cursor:pointer;color:#1552d0;user-select:none;font-weight:600}
@@ -14,6 +15,26 @@
 .rec-detail .kv .k{color:#888;min-width:56px;flex:none}
 .rec-detail .kv .v{color:#222;font-weight:500}
 .rec-detail .muted{color:#bbb}
+.order-progress{height:7px;background:#eef1f5;border-radius:4px;overflow:hidden;margin-top:9px}
+.order-progress>i{display:block;height:100%;background:var(--grad-blue);border-radius:4px}
+.order-stats{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:8px;font-size:12px;color:var(--dim)}
+.order-stats .fail{color:var(--red);font-weight:700}.order-stats .pass{color:var(--green);font-weight:700}
+.order-stats .pending{color:var(--amber-d);font-weight:700}
+.order-card.selected{border-color:var(--blue);box-shadow:inset 3px 0 0 var(--blue),var(--e2)}
+.board-sub{font-size:11px;color:var(--faint);font-weight:500}
+.trace-grid{display:grid;grid-template-columns:minmax(260px,1fr) auto minmax(260px,1fr) auto;gap:14px;align-items:end;width:100%}
+.trace-result{margin:6px 26px 0}.trace-result .item{background:rgba(255,255,255,.86)}
+.order-search-results{display:flex;flex-direction:column;gap:8px}
+.order-gallery{margin:12px 0 18px;background:#fff;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.order-gallery-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line);font-size:14px;font-weight:800}
+.order-gallery-head .meta{margin-left:auto;font-size:12px;font-weight:600;color:var(--dim)}
+.order-gallery-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;padding:14px}
+.order-photo{border:1px solid var(--line);border-radius:7px;overflow:hidden;background:#f8fafc}
+.order-photo img{display:block;width:100%;aspect-ratio:4/3;object-fit:contain;background:#101318;cursor:zoom-in}
+.order-photo .caption{padding:8px 10px;font-size:12px;line-height:1.5;color:var(--dim)}
+.order-photo .caption b{color:var(--ink)}
+@media(max-width:720px){.topbar .pill.muted{display:none}.order-side{width:100%;text-align:left!important}}
+@media(max-width:900px){.trace-grid{grid-template-columns:1fr auto}.trace-grid .field{min-width:0}}
 </style>
 </head>
 <body>
@@ -30,8 +51,8 @@
       <a href="/">🏠 功能首页</a>
       <a href="/workbench">质检工作台</a>
       <a href="/manage">质检管理看板</a>
-      <a href="/users">用户管理</a>
-      <a href="/settings">系统设置</a>
+      <a href="/users" class="admin-only">用户管理</a>
+      <a href="/settings" class="admin-only">系统设置</a>
     </div>
   </div>
   <button class="logout" id="logout">退出登录</button>
@@ -39,7 +60,7 @@
 
 <div style="max-width:none;padding:22px 26px 0">
   <h1 style="font-size:30px;font-weight:900;letter-spacing:-.5px;margin:0 0 6px">质检管理看板</h1>
-  <p style="color:var(--dim);font-size:14px;margin:0">良品率看板、按客户/批次统计、记录明细与人工复查、导出报表，并可按 SN 追溯防偷换。</p>
+  <p style="color:var(--dim);font-size:14px;margin:0">以采购订单为单元查看质检进度、问题内存条、拍摄图片和人工复查，并可按 SN 追溯。</p>
 </div>
 
 <!-- KPI -->
@@ -49,8 +70,8 @@
 <div class="toolbar">
   <div class="field"><label>日期起</label><input type="date" id="f-from"></div>
   <div class="field"><label>日期止</label><input type="date" id="f-to"></div>
-  <div class="field"><label>客户</label><select id="f-customer"><option value="">全部客户</option></select></div>
-  <div class="field"><label>批次</label><select id="f-batch"><option value="">全部批次</option></select></div>
+  <div class="field"><label>供应商</label><select id="f-supplier"><option value="">全部供应商</option></select></div>
+  <div class="field"><label>采购订单</label><select id="f-batch"><option value="">全部订单</option></select></div>
   <div class="field"><label>判定</label><select id="f-verdict">
     <option value="">全部</option><option value="pass">合格</option><option value="fail">不合格</option><option value="unknown">待定</option></select></div>
   <div class="field" style="flex:1"><label>关键词（SN/品牌/型号）</label><input type="text" id="f-kw" placeholder="多词空格分隔"></div>
@@ -59,18 +80,27 @@
   <button class="btn ghost" onclick="exportRecords('csv')">导出CSV</button>
 </div>
 
-<!-- 按 SN 追溯 + 同 SN 历史比对（防偷换第二道）-->
+<!-- 采购订单定位 + SN 历史追溯 -->
 <div class="filters" style="margin-top:6px">
-  <div class="field" style="flex:1"><label>按 SN 追溯（查这根历次质检 + 日期是否被换过）</label>
-    <input type="text" id="sn-q" placeholder="输入或扫入 SN，回车查询" onkeydown="if(event.key==='Enter')snLookup()"></div>
-  <button class="btn primary" onclick="snLookup()">查历史</button>
+  <div class="trace-grid">
+    <div class="field"><label>按采购订单搜索</label>
+      <input type="search" id="order-q" list="order-options" placeholder="输入完整或部分采购订单号" onkeydown="if(event.key==='Enter')orderLookup()">
+      <datalist id="order-options"></datalist>
+    </div>
+    <button class="btn primary" onclick="orderLookup()">查订单</button>
+    <div class="field"><label>按 SN 追溯（历次质检与日期变化）</label>
+      <input type="search" id="sn-q" placeholder="输入或扫入 SN" onkeydown="if(event.key==='Enter')snLookup()"></div>
+    <button class="btn primary" onclick="snLookup()">查 SN</button>
+  </div>
 </div>
-<div id="sn-result" style="margin:6px 0"></div>
+<div class="trace-result" id="order-result"></div>
+<div id="order-gallery"></div>
+<div class="trace-result" id="sn-result"></div>
 
-<!-- 双看板：左=批次，右=质检记录 -->
+<!-- 双看板：左=采购订单，右=订单下的逐根质检记录 -->
 <div class="boards">
   <div class="board amber">
-    <div class="head">批次看板 <span class="count" id="batch-count">0</span></div>
+    <div class="head"><span>采购订单看板</span><span class="board-sub">订单进度与结果汇总</span><span class="count" id="batch-count">0</span></div>
     <div class="body" id="batch-body"><div class="empty">加载中…</div></div>
   </div>
   <div class="board blue">
@@ -100,7 +130,7 @@ function timingText(t){
   t=t||{};const names={capture:'拍照',file_prepare:'图片准备',slot_detect_crop:'槽位/裁图',rule_ocr:'规则OCR',appearance:'外观',label_decode:'二维码',parallel_analysis:'并行分析',archive:'归档',database:'入库'};
   return Object.entries(names).filter(([k])=>t[k]!=null).map(([k,n])=>n+' '+sec(t[k])).join(' · ')||'—';
 }
-function tokenText(t){t=t||{};return `总计 ${t.total_tokens||0}（输入 ${t.prompt_tokens||0} / 输出 ${t.completion_tokens||0} / 调用 ${t.calls||0}）`}
+function tokenText(t){t=t||{};return (t.total_tokens||t.calls)?`总计 ${t.total_tokens||0}（输入 ${t.prompt_tokens||0} / 输出 ${t.completion_tokens||0} / 调用 ${t.calls||0}）`:'未调用大模型'}
 /* 一条记录的「全部数据」展开块——数据库每一列都在这里可见 */
 function detailBlock(r){
   const link=(u,t)=>u?`<a class="btn-xs" href="${u}" target="_blank">${t}</a>`:'';
@@ -112,11 +142,12 @@ function detailBlock(r){
     kv('主控日期',esc(r.controller_date)||'—'),kv('PCB日期',esc(r.pcb_date)||'—'),
     kv('元器件',okTag(r.comp_ok)),kv('金手指',okTag(r.gold_finger_ok)),
     kv('芯片标记',okTag(r.chip_mark_ok)),kv('日期一致',okTag(r.date_ok)),
-    kv('客户',esc(r.customer)||'—'),kv('供应商',esc(r.supplier)||'—'),kv('批次',esc(r.batch_no)||'—'),
+    kv('订单ID',r.batch_id||'—'),kv('采购订单',esc(r.batch_no)||'—'),
+    kv('客户',esc(r.customer)||'—'),kv('供应商',esc(r.supplier)||'—'),
     kv('成色',esc(r.cond)||'—'),kv('槽位',r.slot_pos==null?'—':('第'+r.slot_pos+'槽')),
     kv('操作人',esc(r.operator)||'—'),kv('复查',esc(r.review_status)||'—'),
     kv('时间',esc(r.created_at)||'—'),kv('备注',esc(r.remark)||'—'),
-    kv('检测批次ID',esc(r.inspection_id)||'—'),kv('识别方式',r.recognition_mode==='rules'?'规则识别':esc(r.recognition_mode)||'—'),
+    kv('检测批次ID',esc(r.inspection_id)||'—'),kv('识别方式',r.recognition_mode==='geo'?'整合识别':(r.recognition_mode==='rules'?'旧规则识别':esc(r.recognition_mode)||'—')),
     kv('单次总耗时',sec(r.elapsed_sec||(r.timing||{}).total)),kv('本次 Token',esc(tokenText(r.token_usage))),
     kv('二维码SN',esc(lb.sn)||'未识别'),kv('二维码型号',esc(lb.model)||'—'),
     kv('二维码规格',esc(lb.spec)||'—'),kv('二维码厂商批次',esc(lb.mfg)||'—'),
@@ -137,7 +168,8 @@ function detailBlock(r){
 $('menu-btn').onclick=e=>{e.stopPropagation();$('menu').classList.toggle('open')};
 document.addEventListener('click',()=>$('menu').classList.remove('open'));
 $('logout').onclick=async()=>{await fetch('/api/logout',{method:'POST'});location.href='/login';};
-(async()=>{try{const d=await(await fetch('/api/me')).json();if(d.authenticated)$('user').textContent=d.username+'（'+(d.role==='admin'?'管理员':'质检员')+'）';}catch(e){}})();
+let currentUser='';
+(async()=>{try{const d=await(await fetch('/api/me')).json();if(d.authenticated){currentUser=d.username||'';$('user').textContent=d.username+'（'+(d.role==='admin'?'管理员':'质检员')+'）';if(d.role!=='admin')document.querySelectorAll('.admin-only').forEach(el=>el.remove());}}catch(e){}})();
 
 let allRecords=[], allBatches=[];
 
@@ -149,29 +181,45 @@ async function loadKpis(){
       <div class="bar"><i style="width:${o.yield==null?0:o.yield*100}%"></i></div></div>`;
     const activeBatches=allBatches.filter(b=>b.active).length;
     $('kpis').innerHTML=one('今日良品率',d.today)+one('累计良品率',d.all)+
-      `<div class="kpi"><div class="lab">在检批次</div><div class="val">${activeBatches}</div><div class="sub">共 ${allBatches.length} 个批次</div></div>`+
+      `<div class="kpi"><div class="lab">在检订单</div><div class="val">${activeBatches}</div><div class="sub">共 ${allBatches.length} 张采购订单</div></div>`+
       `<div class="kpi"><div class="lab">今日已检</div><div class="val">${d.today.total}</div><div class="sub">累计 ${d.all.total} 根</div></div>`;
   }catch(e){}
 }
 
 async function loadBatches(){
   try{
-    allBatches=(await(await fetch('/api/batches')).json()).batches||[];
+    allBatches=(await(await fetch('/api/orders?limit=500')).json()).batches||[];
   }catch(e){allBatches=[]}
   // 填充筛选下拉
   const fb=$('f-batch'), cur=fb.value;
-  fb.innerHTML='<option value="">全部批次</option>'+allBatches.map(b=>`<option value="${esc(b.batch_no)}">${esc(b.batch_no||'#'+b.id)}</option>`).join('');
+  fb.innerHTML='<option value="">全部订单</option>'+allBatches.map(b=>`<option value="${b.id}">${esc(b.batch_no||'订单 #'+b.id)}</option>`).join('');
   fb.value=cur;
+  $('order-options').innerHTML=allBatches.filter(b=>b.batch_no).map(b=>`<option value="${esc(b.batch_no)}">${esc(b.supplier||b.model||'')}</option>`).join('');
+  const suppliers=[...new Set(allBatches.map(b=>b.supplier).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'zh-CN'));
+  const fs=$('f-supplier'), supplierCur=fs.value;
+  fs.innerHTML='<option value="">全部供应商</option>'+suppliers.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('');
+  fs.value=supplierCur;
   renderBatches();
 }
 function renderBatches(){
   const box=$('batch-body');
-  if(!allBatches.length){box.innerHTML='<div class="empty">暂无批次 —— 去工作台登记</div>';$('batch-count').textContent=0;return;}
-  $('batch-count').textContent=allBatches.length;
-  box.innerHTML=allBatches.map(b=>`<div class="item amber">
+  if(!allBatches.length){box.innerHTML='<div class="empty">暂无采购订单</div>';$('batch-count').textContent=0;return;}
+  const supplier=$('f-supplier').value;
+  const visibleBatches=supplier?allBatches.filter(b=>b.supplier===supplier):allBatches;
+  $('batch-count').textContent=visibleBatches.length;
+  if(!visibleBatches.length){box.innerHTML='<div class="empty">该供应商暂无采购订单</div>';return;}
+  const selected=$('f-batch').value;
+  box.innerHTML=visibleBatches.map(b=>{
+    const records=allRecords.filter(r=>String(r.batch_id||'')===String(b.id)||(r.batch_id==null&&r.batch_no&&r.batch_no===b.batch_no));
+    const passed=records.filter(r=>r.verdict==='pass').length;
+    const failed=records.filter(r=>r.verdict==='fail').length;
+    const unknown=records.length-passed-failed;
+    const pendingReview=records.filter(r=>!r.review_status||r.review_status==='未复查').length;
+    const expected=Number(b.qty_expected||0), progress=expected?Math.min(100,records.length/expected*100):0;
+    return `<div class="item amber order-card${selected===String(b.id)?' selected':''}">
     <div class="row1">
       <div class="main">
-        <div class="spec">${esc(b.batch_no)||'#'+b.id}
+        <div class="spec">${esc(b.batch_no)||'订单 #'+b.id}<span class="tag cat">ID ${b.id}</span>
           <span class="tag cat">${esc(b.brand)||'—'}</span>
           ${b.model?`<span class="tag cat">${esc(b.model)}</span>`:''}
           <span class="tag cat">${esc(normCapacity(b.capacity))||''}</span>
@@ -181,35 +229,34 @@ function renderBatches(){
           ${b.active?'<span class="tag old">在检</span>':'<span class="tag unknown">已结</span>'}</div>
         <div class="meta"><span>客户 ${esc(b.customer)||'—'}</span>${b.supplier?`<span>供应商 ${esc(b.supplier)}</span>`:''}<span>登记 ${esc(b.created_at||'')}</span>${b.remark?`<span>来源 ${esc(b.remark)}</span>`:''}</div>
       </div>
-      <div style="text-align:right">
+        <div class="order-stats"><span>已检 <b>${records.length}</b></span><span class="pass">合格 ${passed}</span><span class="fail">不合格 ${failed}</span><span class="pending">待定 ${unknown}</span><span>待复查 ${pendingReview}</span></div>
+        ${expected?`<div class="order-progress" title="已完成 ${progress.toFixed(1)}%"><i style="width:${progress}%"></i></div>`:''}
+      </div>
+      <div class="order-side" style="text-align:right">
         <div class="price"><span class="rate ${rateCls(b.yield)}">${pct(b.yield)}</span></div>
-        <div class="meta" style="justify-content:flex-end">已检 ${b.total} · 良品 ${b.passed}</div>
-        ${b.qty_expected?`<div class="meta" style="justify-content:flex-end">应检 ${b.qty_expected} · <span style="${b.qty_remain>0?'color:var(--red);font-weight:700':'color:var(--green);font-weight:700'}">${b.qty_remain>0?('差 '+b.qty_remain):'已拍够'}</span></div>`:''}
+        <div class="meta" style="justify-content:flex-end">订单合格率</div>
+        ${expected?`<div class="meta" style="justify-content:flex-end">进度 ${records.length}/${expected} · ${progress.toFixed(1)}%</div>`:''}
       </div>
     </div>
     <div class="acts">
-      <button class="btn-xs" onclick="filterByBatch('${esc(b.batch_no)}')">看本批记录</button>
-    </div></div>`).join('');
+      <button class="btn-xs" onclick="filterByBatch(${b.id})">查看本订单内存条</button>
+    </div></div>`}).join('');
 }
-function filterByBatch(no){$('f-batch').value=no;renderRecords();window.scrollTo({top:0,behavior:'smooth'});}
+function filterByBatch(id){$('f-batch').value=String(id);renderBatches();renderRecords();window.scrollTo({top:0,behavior:'smooth'});}
 
 async function loadRecords(){
   try{
     allRecords=(await(await fetch('/api/records?limit=300')).json()).records||[];
   }catch(e){allRecords=[]}
-  // 客户下拉
-  const cs=[...new Set(allRecords.map(r=>r.customer).filter(Boolean))];
-  const fc=$('f-customer'), cur=fc.value;
-  fc.innerHTML='<option value="">全部客户</option>'+cs.map(c=>`<option>${esc(c)}</option>`).join('');
-  fc.value=cur;
   renderRecords();
 }
 function recMatch(r){
-  const c=$('f-customer').value, b=$('f-batch').value, v=$('f-verdict').value;
+  const supplier=$('f-supplier').value, b=$('f-batch').value, v=$('f-verdict').value;
   const kw=$('f-kw').value.trim().toLowerCase().split(/[\s,，]+/).filter(Boolean);
   const from=$('f-from').value, to=$('f-to').value;
-  if(c && r.customer!==c)return false;
-  if(b && r.batch_no!==b)return false;
+  const linkedOrder=r.batch_id==null?null:allBatches.find(o=>String(o.id)===String(r.batch_id));
+  if(supplier && r.supplier!==supplier && (!linkedOrder||linkedOrder.supplier!==supplier))return false;
+  if(b){const order=allBatches.find(o=>String(o.id)===String(b));if(String(r.batch_id||'')!==String(b)&&!(r.batch_id==null&&order&&r.batch_no===order.batch_no))return false;}
   if(v && r.verdict!==v)return false;
   const day=(r.created_at||'').slice(0,10);
   if(from && day<from)return false;
@@ -220,11 +267,50 @@ function recMatch(r){
 }
 function exportRecords(fmt){
   const q=new URLSearchParams({format:fmt});
-  const c=$('f-customer').value, b=$('f-batch').value, v=$('f-verdict').value;
+  const supplier=$('f-supplier').value, b=$('f-batch').value, v=$('f-verdict').value;
   const from=$('f-from').value, to=$('f-to').value;
-  if(c)q.set('customer',c); if(b)q.set('batch_no',b); if(v)q.set('verdict',v);
+  if(supplier)q.set('supplier',supplier); if(b)q.set('batch_id',b); if(v)q.set('verdict',v);
   if(from)q.set('date_from',from); if(to)q.set('date_to',to);
   window.open('/api/records/export?'+q.toString(),'_blank');
+}
+function orderLookup(){
+  const q=$('order-q').value.trim().toLowerCase(), box=$('order-result');
+  if(!q){box.innerHTML='';return;}
+  const matches=allBatches.filter(b=>String(b.batch_no||'').toLowerCase().includes(q)).slice(0,20);
+  if(!matches.length){box.innerHTML='<div class="empty">没有找到包含“'+esc($('order-q').value.trim())+'”的采购订单</div>';return;}
+  box.innerHTML='<div class="order-search-results">'+matches.map(b=>{
+    const records=allRecords.filter(r=>String(r.batch_id||'')===String(b.id)||(r.batch_id==null&&r.batch_no===b.batch_no));
+    const failed=records.filter(r=>r.verdict==='fail').length;
+    return `<div class="item"><div class="row1"><div class="main"><div class="spec">${esc(b.batch_no)} <span class="tag cat">ID ${b.id}</span>${b.active?'<span class="tag old">在检</span>':'<span class="tag unknown">已结</span>'}</div><div class="meta"><span>供应商 ${esc(b.supplier)||'—'}</span><span>${esc(b.model)||'—'}</span><span>应检 ${b.qty_expected||'—'}</span><span>已检 ${records.length}</span><span style="color:var(--red)">问题 ${failed}</span></div></div><button class="btn-xs" onclick="openOrder(${b.id})">查看订单记录</button></div></div>`;
+  }).join('')+'</div>';
+}
+function openOrder(id){
+  const order=allBatches.find(b=>String(b.id)===String(id));
+  if(order)$('order-q').value=order.batch_no||'';
+  $('f-batch').value=String(id);renderBatches();renderRecords();
+  loadOrderGallery(id);
+  document.querySelector('.boards').scrollIntoView({behavior:'smooth',block:'start'});
+}
+async function loadOrderGallery(id){
+  const box=$('order-gallery');
+  if(!id){box.innerHTML='';return;}
+  box.innerHTML='<div class="empty">正在加载订单照片…</div>';
+  try{
+    const d=await(await fetch('/api/records/by_order/'+encodeURIComponent(id)+'?limit=2000')).json();
+    if(!d.ok)throw new Error(d.error||'订单照片加载失败');
+    const photos=[];
+    for(const r of d.records||[]){
+      const source=r.annotated_front||r.front_img||'';
+      if(!source)continue;
+      photos.push({url:source,record:r});
+    }
+    const no=esc((d.order||{}).batch_no||('订单 #'+id));
+    if(!photos.length){box.innerHTML=`<section class="order-gallery"><div class="order-gallery-head">${no} · 订单照片<span class="meta">暂无归档照片</span></div></section>`;return;}
+    box.innerHTML=`<section class="order-gallery"><div class="order-gallery-head">${no} · 订单照片<span class="meta">${photos.length} 组，按拍摄时间倒序</span></div><div class="order-gallery-grid">${photos.map(p=>{
+      const r=p.record;
+      return `<article class="order-photo"><img src="${esc(p.url)}" alt="${no} 质检照片" onclick="window.open('${esc(p.url)}','_blank')"><div class="caption"><b>${esc(r.created_at||'')}</b> · 第${r.slot_pos||'—'}槽<br>SN ${esc(r.sn)||'未识别'} · ${verdictTag(r.verdict)}<br>${imgLinks(r)}</div></article>`;
+    }).join('')}</div></section>`;
+  }catch(e){box.innerHTML='<div class="empty">订单照片加载失败：'+esc(e.message)+'</div>';}
 }
 async function snLookup(){
   const sn=$('sn-q').value.trim();
@@ -245,7 +331,7 @@ async function snLookup(){
         '　PCB '+esc(r.pcb_date||'—')+'　颗粒 '+r.storage_count+
         '　耗时 '+sec(r.elapsed_sec||(r.timing||{}).total)+'　Token '+((r.token_usage||{}).total_tokens||0)+
         '　二维码 '+esc((r.label_data||{}).raw||'未识别')+
-        (r.batch_no?('　批次 '+esc(r.batch_no)):'')+'</div>';
+        (r.batch_no?('　订单 '+esc(r.batch_no)):'')+'</div>';
     }).join('');
     box.innerHTML=banner+'<div style="margin-top:6px">'+rows+'</div>';
   }catch(e){box.innerHTML='<div class="empty">查询失败：'+esc(e.message)+'</div>';}
@@ -257,8 +343,8 @@ function imgLinks(r){
   return L.join('');
 }
 async function setReview(id,status){
-  const fd=new FormData();fd.append('status',status);fd.append('operator','管理员');
-  try{const d=await(await fetch('/api/records/'+id+'/review',{method:'POST',body:fd})).json();if(!d.ok)alert('更新失败');}catch(e){alert(e.message)}
+  const fd=new FormData();fd.append('status',status);fd.append('operator',currentUser);
+  try{const d=await(await fetch('/api/records/'+id+'/review',{method:'POST',body:fd})).json();if(!d.ok)alert('更新失败');else await refreshAll();}catch(e){alert(e.message)}
 }
 function renderRecords(){
   const box=$('rec-body');
@@ -274,7 +360,7 @@ function renderRecords(){
       <div class="main">
         <div class="spec">${esc(r.brand)||'?'} ${esc(r.capacity)||''} / ${esc(r.frequency)||''}
           ${r.cond?`<span class="tag new">${esc(r.cond)}</span>`:''}
-          ${verdictTag(r.verdict)} ${r.batch_no?`<span class="tag amber">${esc(r.batch_no)}</span>`:''}${r.slot_pos?`<span class="tag">托盘第${r.slot_pos}槽</span>`:''}</div>
+          ${verdictTag(r.verdict)} ${r.batch_no?`<span class="tag amber">订单 ${esc(r.batch_no)}</span>`:''}${r.batch_id?`<span class="tag cat">ID ${r.batch_id}</span>`:''}${r.slot_pos?`<span class="tag">托盘第${r.slot_pos}槽</span>`:''}</div>
         <div class="meta"><span>SN ${esc(r.sn)||'—'}</span><span>客户 ${esc(r.customer)||'—'}</span>
           <span>颗粒 ${r.storage_count}</span><span>耗时 ${sec(r.elapsed_sec||(r.timing||{}).total)}</span><span>Token ${(r.token_usage||{}).total_tokens||0}</span><span>${esc(r.created_at||'')}</span><span>${esc(r.operator)||''}</span>${r.remark?`<span>来源 ${esc(r.remark)}</span>`:''}</div>
         ${r.fail_desc?`<div class="note" style="color:var(--red)">${esc(r.fail_desc)}</div>`:''}
@@ -287,11 +373,14 @@ function renderRecords(){
     </div></div>`;}).join('');
 }
 
-['f-customer','f-batch','f-verdict','f-from','f-to'].forEach(id=>$(id).onchange=renderRecords);
+$('f-supplier').onchange=()=>{renderBatches();renderRecords();};
+['f-verdict','f-from','f-to'].forEach(id=>$(id).onchange=renderRecords);
+$('f-batch').onchange=()=>{renderBatches();renderRecords();loadOrderGallery($('f-batch').value);};
 $('f-kw').oninput=renderRecords;
 
 async function refreshAll(){
   await Promise.all([loadBatches(), loadRecords()]);
+  renderBatches();renderRecords();
   await loadKpis();
   $('lastup').textContent='最近更新 '+new Date().toLocaleTimeString('zh-CN',{hour12:false});
 }

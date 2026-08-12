@@ -5,9 +5,11 @@
 """
 from __future__ import annotations
 
+import json
 import os
 import threading
 import time
+from pathlib import Path
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import JSONResponse
@@ -24,10 +26,39 @@ _sync_lock = threading.Lock()
 _sync_stop = threading.Event()
 _sync_thread: threading.Thread | None = None
 _sync_started_at = time.time()
+_SYNC_STATE_FILE = Path(os.environ.get(
+    "KD_SYNC_STATE_FILE",
+    str(Path(__file__).resolve().parents[2] / "config" / "kingdee_sync_state.json"),
+))
 _sync_state = {
     "running": False, "last_started": 0.0, "last_success": 0.0,
-    "last_full_success": 0.0, "last_mode": "", "last_imported": 0, "last_error": "",
+    "last_full_success": 0.0, "last_mode": "", "last_imported": 0,
+    "last_error": "", "last_error_at": 0.0, "consecutive_failures": 0,
 }
+
+
+def _load_sync_state() -> None:
+    try:
+        saved = json.loads(_SYNC_STATE_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return
+    for key in _sync_state:
+        if key != "running" and key in saved:
+            _sync_state[key] = saved[key]
+
+
+def _save_sync_state() -> None:
+    try:
+        _SYNC_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        target = _SYNC_STATE_FILE.with_suffix(_SYNC_STATE_FILE.suffix + ".tmp")
+        data = {**_sync_state, "running": False}
+        target.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        target.replace(_SYNC_STATE_FILE)
+    except OSError:
+        pass
+
+
+_load_sync_state()
 
 _KD_FIELDS = (
     "kd_bill_status", "kd_close_status", "kd_pay_mode", "kd_operator",
@@ -152,10 +183,10 @@ def _sync_kingdee(full: bool = False, force: bool = False) -> dict:
     if not _sync_lock.acquire(blocking=False):
         return {"ok": True, "skipped": True, "reason": "running", **sync_status()}
     mode = "full" if full else "incremental"
-    _sync_state.update(running=True, last_started=now, last_mode=mode, last_error="")
+    _sync_state.update(running=True, last_started=now, last_mode=mode)
     try:
         pages = None if full else _INCREMENTAL_PAGES
-        result = kingdee.fetch_orders(page_size=100, max_pages=pages)
+        result = kingdee.fetch_orders(page_size=100, max_pages=pages, recent=not full)
         imported = _import_orders(result, source="kingdee")
         payload = imported.body if isinstance(imported, JSONResponse) else None
         if payload is not None:
@@ -164,12 +195,24 @@ def _sync_kingdee(full: bool = False, force: bool = False) -> dict:
         if not imported.get("ok"):
             raise RuntimeError(imported.get("error") or "金蝶同步失败")
         finished = time.time()
-        _sync_state.update(last_success=finished, last_imported=int(imported.get("imported") or 0))
+        _sync_state.update(
+            last_success=finished,
+            last_imported=int(imported.get("imported") or 0),
+            last_error="",
+            last_error_at=0.0,
+            consecutive_failures=0,
+        )
         if full:
             _sync_state["last_full_success"] = finished
+        _save_sync_state()
         return {**imported, "mode": mode, "pages": pages, "skipped": False}
     except Exception as exc:  # noqa: BLE001
-        _sync_state["last_error"] = str(exc)
+        _sync_state.update(
+            last_error=str(exc),
+            last_error_at=time.time(),
+            consecutive_failures=int(_sync_state.get("consecutive_failures") or 0) + 1,
+        )
+        _save_sync_state()
         return {"ok": False, "error": str(exc), "mode": mode}
     finally:
         _sync_state["running"] = False
@@ -184,7 +227,12 @@ def sync_status() -> dict:
         "last_mode": _sync_state["last_mode"],
         "last_imported": int(_sync_state["last_imported"] or 0),
         "last_error": _sync_state["last_error"],
+        "last_error_at": float(_sync_state["last_error_at"] or 0),
+        "consecutive_failures": int(_sync_state["consecutive_failures"] or 0),
         "interval_seconds": _SYNC_INTERVAL,
+        "full_interval_seconds": _FULL_SYNC_INTERVAL,
+        "configured": kingdee.is_configured(),
+        "scheduler_running": bool(_sync_thread and _sync_thread.is_alive()),
     }
 
 

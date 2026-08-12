@@ -41,3 +41,22 @@ wheels/
 # 超出 GitHub 建议体积。换机部署时另行拷贝，或改用 Git LFS。
 # 缺失时 ocr_engine._model_dir() 会回退 ~/.paddlex 缓存并联网下载。
 /models/
+
+# Local backups, formatting scratch data, and runtime API snapshots
+/.bak_cfg/
+/_bak_private/
+/_fmt/
+/_res/
+/cap*.json
+/rec*.json
+/sync*.json
+/config/kingdee_sync_state.json
+
+# Locally generated Hynix inspection worksheets and one-off generators
+/海力士内存条质检工作表_*.xlsx
+/scripts/generate_hynix_work_sheet.py
+/scripts/remove_work_sheet_stability.py
+/scripts/restore_gold_finger_row.py
+/scripts/update_work_sheet_current_capability.py
+/scripts/update_work_sheet_reflection_standard.py
+/scripts/update_work_sheet_speed.py

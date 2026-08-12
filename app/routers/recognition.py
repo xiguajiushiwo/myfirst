@@ -13,7 +13,6 @@ from .. import services
 from ..core import TEST_DIR, UPLOAD_DIR
 from ..recognition import template_store
 from ..storage import db
-from ..inspection.quality_inspect import inspect_module, read_label_vl
 
 router = APIRouter()
 
@@ -25,6 +24,38 @@ def templates():
     """型号模板列表（前端下拉 + 模板管理）。"""
     return {"templates": template_store.list_templates(),
             "default": template_store.default_template_id()}
+
+
+@router.get("/api/templates/for_order/{batch_id}")
+def template_for_order(batch_id: int):
+    """返回采购订单应使用的产品模板；未标定时明确阻断并给出采图要求。"""
+    batch = db.get_batch(batch_id)
+    if not batch:
+        return JSONResponse({"ok": False, "ready": False, "error": "采购订单不存在"}, status_code=404)
+    try:
+        template_id = services._resolve_product_template(batch, None)
+        template = template_store.get_template(template_id) or {}
+        return {"ok": True, "ready": True, "order": batch, "template": {
+            "id": template_id,
+            "brand": template.get("brand", ""),
+            "model": template.get("model", ""),
+            "capacity": template.get("capacity", ""),
+            "frequency": template.get("frequency", ""),
+            "calibrated": True,
+        }}
+    except ValueError as exc:
+        family = services._batch_product_family(batch)
+        pending_id = "hynix-64gb-5600-pending" if family == "hynix" else ""
+        pending = template_store.get_template(pending_id) if pending_id else {}
+        return {"ok": True, "ready": False, "order": batch, "error": str(exc), "template": {
+            "id": pending_id,
+            "brand": (pending or {}).get("brand", ""),
+            "model": (pending or {}).get("model", ""),
+            "capacity": (pending or {}).get("capacity", ""),
+            "frequency": (pending or {}).get("frequency", ""),
+            "calibrated": False,
+            "requirements": (pending or {}).get("requirements", []),
+        }}
 
 
 @router.delete("/api/templates/{template_id}")
@@ -39,15 +70,15 @@ def delete_template(template_id: str):
     return {"ok": True, "deleted": template_id}
 
 
-# --------------------- 读标签（品牌/型号/频率/SN，大模型）---------------------
+# --------------------- 读标签（仅本地二维码）---------------------
 
 @router.post("/api/read_label")
 async def read_label(front: UploadFile = File(...)):
-    """读取正面标签，返回 {brand, model, frequency, sn}，供前端自动填充（可人工改）。"""
+    """只用本地二维码读取标签，不调用多模态模型。"""
     uid = uuid.uuid4().hex[:12]
     in_path = await services.save_upload(front, uid, "label")
     try:
-        return {"ok": True, **read_label_vl(in_path)}
+        return {"ok": True, **services._read_label(in_path)}
     except Exception as e:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": str(e)}, status_code=200)
 
@@ -77,7 +108,7 @@ def folder_recognize(
     name: str = Form(""),
     current_year: int | None = Form(None),
     template_id: str | None = Form(None),
-    mode: str | None = Form("rules"),
+    mode: str | None = Form("geo"),
     threshold: float | None = Form(None),
     vl_check: bool = Form(False),
 ):
@@ -103,7 +134,7 @@ def folder_recognize(
     return JSONResponse({"ok": True, "recognize": rec, "inspect": insp, "label": label})
 
 
-# --------------------- 识别 / 外观质检（手动上传）---------------------
+# --------------------- 日期识别（手动上传）---------------------
 
 @router.post("/api/recognize")
 async def recognize(
@@ -113,7 +144,7 @@ async def recognize(
     controller: UploadFile | None = File(None),
     current_year: int | None = Form(None),
     template_id: str | None = Form(None),
-    mode: str | None = Form("rules"),
+    mode: str | None = Form("geo"),
     threshold: float | None = Form(None),
     vl_check: bool = Form(False),
 ):
@@ -140,9 +171,7 @@ async def inspect(
     front: UploadFile | None = File(None),
     back: UploadFile | None = File(None),
 ):
-    """外观质检：把正/背面照片交给 Qwen-VL 大模型，检查元器件损坏/发黑、
-    金手指、以及存储芯片二维码标记是否有线条；任一异常亮红灯并给出原因。
-    """
+    """外观识别已停用；当前系统只做本地日期识别。"""
     t0 = time.perf_counter()
     if front is None and back is None:
         return JSONResponse({"ok": False, "error": "请至少上传一张图片"}, status_code=400)
@@ -153,11 +182,16 @@ async def inspect(
         if uf is not None:
             paths[slot] = await services.save_upload(uf, uid, f"inspect_{slot}")
 
-    # elapsed_sec=整体（含图片编码+调用）；model_sec=仅大模型调用（inspect_module 内计）
-    result = inspect_module(paths.get("front"), paths.get("back"))
-    result["elapsed_sec"] = round(time.perf_counter() - t0, 2)
-    result["images"] = {
+    result = {
+        "ok": True,
+        "skipped": True,
+        "qualified": None,
+        "reason": "当前仅执行日期识别，外观质检已停用",
+        "elapsed_sec": round(time.perf_counter() - t0, 2),
+        "model_sec": 0,
+        "token_usage": {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        "images": {
         slot: f"/uploads/{os.path.basename(p)}" for slot, p in paths.items()
+        },
     }
-    status = 200 if result.get("ok") else 502
-    return JSONResponse(result, status_code=status)
+    return JSONResponse(result)

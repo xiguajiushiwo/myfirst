@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import logging
+import math
 import os
 import re
 import time
@@ -42,6 +43,17 @@ _TIMEOUT = int(os.environ.get("KD_TIMEOUT", "30") or 30)
 
 # access_token 内存缓存（有效期内复用，避免每次都换 token）
 _token: dict = {"value": "", "exp": 0.0}
+
+
+def _token_lifetime_seconds(raw) -> float:
+    """兼容金蝶不同网关：expires_in 可能返回秒，也可能返回毫秒。"""
+    try:
+        value = float(raw or 7200)
+    except (TypeError, ValueError):
+        value = 7200.0
+    if value > 86400:
+        value /= 1000.0
+    return max(60.0, value)
 
 
 def is_configured() -> bool:
@@ -69,9 +81,10 @@ def get_token(force: bool = False) -> str:
     if not js.get("status") or not (js.get("data") or {}).get("access_token"):
         raise RuntimeError(f"getToken 失败: {js.get('message') or js}")
     data = js["data"]
+    lifetime = _token_lifetime_seconds(data.get("expires_in"))
     _token["value"] = data["access_token"]
-    _token["exp"] = now + float(data.get("expires_in", 7200) or 7200) / 1000.0 * 1000  # expires_in 单位见返回
-    log.info("金蝶 token 已获取（有效期约 %ss）", data.get("expires_in"))
+    _token["exp"] = now + lifetime
+    log.info("金蝶 token 已获取（有效期约 %.0fs）", lifetime)
     return _token["value"]
 
 
@@ -90,16 +103,34 @@ def _auth_headers() -> dict:
     }
 
 
+def _token_auth_failed(message) -> bool:
+    text = str(message or "").lower()
+    return "token" in text and any(word in text for word in ("过期", "expired", "认证不通过", "invalid"))
+
+
+def _post_query(path: str, body: dict, error_label: str) -> dict:
+    """执行金蝶只读查询；token 失效时刷新并原请求重试一次。"""
+    for attempt in range(2):
+        response = requests.post(f"{_BASE}{path}", json=body,
+                                 headers=_auth_headers(), timeout=_TIMEOUT)
+        payload = response.json()
+        if payload.get("status"):
+            return payload
+        message = payload.get("message") or payload
+        if attempt == 0 and _token_auth_failed(message):
+            get_token(force=True)
+            continue
+        raise RuntimeError(f"{error_label}: {message}")
+    raise RuntimeError(f"{error_label}: token 刷新后仍认证失败")
+
+
 def query_orders(filter_str: str = "1 = 1", page_no: int = 1, page_size: int = 50,
                  billno: str = "") -> dict:
     """调采购订单查询接口，返回原始 {rows:[...], totalCount:n}。
     filter_str: 金蝶 SQL 式过滤，如 "billstatus = 'C'"、"billno = 'CGDD-260505-000001'"。"""
     data = {"billno": billno} if billno else {"filter": f"[{filter_str}]"}
     body = {"data": data, "pageNo": int(page_no), "pageSize": int(page_size)}
-    r = requests.post(f"{_BASE}{_ORDER_API}", json=body, headers=_auth_headers(), timeout=_TIMEOUT)
-    js = r.json()
-    if not js.get("status"):
-        raise RuntimeError(f"采购订单查询失败: {js.get('message') or js}")
+    js = _post_query(_ORDER_API, body, "采购订单查询失败")
     data = js.get("data") or {}
     return {
         "rows": data.get("rows") or [],
@@ -116,10 +147,7 @@ def query_suppliers(numbers: list[str], page_no: int = 1, page_size: int = 100) 
     if not nums:
         return {"rows": [], "totalCount": 0, "lastPage": True}
     body = {"data": {"number": nums}, "pageNo": int(page_no), "pageSize": int(page_size)}
-    r = requests.post(f"{_BASE}{_SUPPLIER_API}", json=body, headers=_auth_headers(), timeout=_TIMEOUT)
-    js = r.json()
-    if not js.get("status"):
-        raise RuntimeError(f"供应商查询失败: {js.get('message') or js}")
+    js = _post_query(_SUPPLIER_API, body, "供应商查询失败")
     data = js.get("data") or {}
     return {
         "rows": data.get("rows") or [],
@@ -143,10 +171,7 @@ def query_sales_orders(billnos: list[str] | str, page_no: int = 1, page_size: in
         return {"rows": [], "totalCount": 0, "lastPage": True}
     body_billno = unique[0] if len(unique) == 1 else unique
     body = {"data": {"billno": body_billno}, "pageNo": int(page_no), "pageSize": int(page_size)}
-    r = requests.post(f"{_BASE}{_SALES_ORDER_API}", json=body, headers=_auth_headers(), timeout=_TIMEOUT)
-    js = r.json()
-    if not js.get("status"):
-        raise RuntimeError(f"销售订单查询失败: {js.get('message') or js}")
+    js = _post_query(_SALES_ORDER_API, body, "销售订单查询失败")
     data = js.get("data") or {}
     return {
         "rows": data.get("rows") or [],
@@ -541,8 +566,14 @@ def _resolve_supplier_names(orders: list[dict]) -> list[dict]:
     return orders
 
 
+def _recent_page_range(total: int, page_size: int, pages: int) -> range:
+    last_page = max(1, math.ceil(max(0, int(total)) / max(1, int(page_size))))
+    first_page = max(1, last_page - max(1, int(pages)) + 1)
+    return range(first_page, last_page + 1)
+
+
 def fetch_orders(only_audited: bool = True, page_size: int = 100,
-                 max_pages: int | None = None) -> dict:
+                 max_pages: int | None = None, recent: bool = False) -> dict:
     """拉采购订单列表 → 本地订单字段。
 
     字段表要求 data.billno 必填；真实接口支持 billno="*" 返回列表。
@@ -551,28 +582,34 @@ def fetch_orders(only_audited: bool = True, page_size: int = 100,
     if not is_configured():
         return {"ok": False, "error": "金蝶未配置（.env 缺 KD_* 凭证）"}
     try:
-        all_rows, total, page_no = [], 0, 1
-        while True:
-            res = query_orders(page_no=page_no, page_size=page_size, billno="*")
-            rows = res["rows"]
-            all_rows.extend(rows)
-            total = int(res.get("totalCount") or total or 0)
-            if not rows:
-                break
-            if res.get("lastPage") is True:
-                break
-            if total and len(all_rows) >= total:
-                break
-            if max_pages is not None and page_no >= max(1, int(max_pages)):
-                break
-            page_no += 1
-            if page_no > 100:
-                raise RuntimeError("金蝶采购订单分页超过 100 页，已停止以避免异常循环")
+        all_rows, total = [], 0
+        first = query_orders(page_no=1, page_size=page_size, billno="*")
+        total = int(first.get("totalCount") or 0)
+        if recent and max_pages is not None:
+            page_numbers = list(_recent_page_range(total, page_size, max_pages))
+            for page_no in page_numbers:
+                res = first if page_no == 1 else query_orders(
+                    page_no=page_no, page_size=page_size, billno="*")
+                all_rows.extend(res["rows"])
+        else:
+            page_no, res = 1, first
+            while True:
+                rows = res["rows"]
+                all_rows.extend(rows)
+                total = int(res.get("totalCount") or total or 0)
+                if not rows or res.get("lastPage") is True or (total and len(all_rows) >= total):
+                    break
+                if max_pages is not None and page_no >= max(1, int(max_pages)):
+                    break
+                page_no += 1
+                if page_no > 100:
+                    raise RuntimeError("金蝶采购订单分页超过 100 页，已停止以避免异常循环")
+                res = query_orders(page_no=page_no, page_size=page_size, billno="*")
         orders = _group_orders(all_rows)
         orders = _enrich_specs_from_sales_orders(orders)
         orders = _resolve_supplier_names(_filter_memory_orders(orders))
-        log.info("金蝶采购订单：分录行 %d → 归并订单 %d 张（totalCount=%s）",
-                 len(all_rows), len(orders), total)
+        log.info("金蝶采购订单%s：分录行 %d → 归并订单 %d 张（totalCount=%s）",
+                 "（最新页）" if recent else "", len(all_rows), len(orders), total)
         return {"ok": True, "orders": orders, "total": total or len(orders)}
     except Exception as e:  # noqa: BLE001
         log.exception("金蝶拉单失败")
