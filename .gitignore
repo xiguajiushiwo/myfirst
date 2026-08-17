@@ -70,3 +70,5 @@ wheels/
 /server.stdout.log
 /server.stderr.log
 /tmp_detect_cookie.txt
+/server.*.stdout.log
+/server.*.stderr.log

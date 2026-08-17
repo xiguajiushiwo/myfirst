@@ -281,7 +281,7 @@ class RemoteJobManager:
         )
         raise RemoteImageQualityError(
             f"{'、'.join(labels.get(side, side) for side in dark)}画面过暗，无法识别内存条。"
-            f"请检查光源是否打开、曝光/增益是否过低，并在相机调试页确认实时画面清晰。{detail}"
+            f"请检查光源是否打开、曝光/增益是否过低，并在工作台实时画面确认图像清晰。{detail}"
         )
 
     @staticmethod

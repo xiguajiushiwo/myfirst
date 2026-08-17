@@ -145,8 +145,8 @@ def orders_page():
 
 @app.get("/camera")
 def camera_page():
-    """相机调试：客户机双预览 + 每台曝光/增益/方向校正 + 单路全屏调焦。"""
-    return _page("camera_debug.html")
+    """实时检测工作台别名：预览、拍照检测、参数调整都在同一页面。"""
+    return _page("camera.html")
 
 
 @app.get("/operators")
