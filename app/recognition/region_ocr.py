@@ -283,7 +283,7 @@ def _eval_crop(engine, im: Image.Image, year: int, reader=_read_dram, roi=None):
 
 
 def _best_read(engine, crop: Image.Image, year: int, reader=_read_dram, try_rot180=False,
-               roi=None):
+               roi=None, try_rot90=False):
     """读一个框：**只读增强图一次**。返回 (y, w, raw, score, joined, variant, best_img, hit)。
 
     为什么只读一次（本次改动）：
@@ -307,16 +307,29 @@ def _best_read(engine, crop: Image.Image, year: int, reader=_read_dram, try_rot1
         return None, None, "", 0.0, "", "orig", None, None
     # 对比增强：激光小字/丝印对比度低，增强后命中率明显更高
     # （CLAUDE.md 实测反面 7.3s→4.7s、读出 72→82）。
-    crop_en = _enhance(crop)
-    y, w, raw, score, joined, _ts, hit = _eval_crop(engine, crop_en, year, reader, roi)
-    return y, w, raw, score, joined, "enh", crop_en, hit
+    variants = [("enh", _enhance(crop), roi)]
+    if try_rot90:
+        variants.extend([
+            ("rot90cw", _enhance(crop.transpose(Image.Transpose.ROTATE_270)), None),
+            ("rot90ccw", _enhance(crop.transpose(Image.Transpose.ROTATE_90)), None),
+        ])
+    reads = []
+    for name, image, local_roi in variants:
+        y, w, raw, score, joined, text_score, hit = _eval_crop(
+            engine, image, year, reader, local_roi)
+        reads.append((bool(y), score, text_score, y, w, raw, joined, name, image, hit))
+        if y and score >= _CONF_MIN:
+            break
+    best = max(reads, key=lambda row: (row[0], row[1], row[2]))
+    _, score, _, y, w, raw, joined, name, image, hit = best
+    return y, w, raw, score, joined, name, image, hit
 
 
 # --------- 托盘槽位占位检测（空盘/不满盘：先数数量，只识别有条的槽）---------
 
 # 边缘像素占比阈值：空槽(光滑塑料)边缘极少→接近 0；有条(密集芯片+激光小字)→远高于此。
 # 真机用满盘/空盘各拍一张跑 tools/calibrate_slots.py 标定后，用 SLOT_PRESENCE_MIN 覆盖。
-_SLOT_PRESENCE_MIN = float(os.environ.get("SLOT_PRESENCE_MIN", "0.045"))
+_SLOT_PRESENCE_MIN = float(os.environ.get("SLOT_PRESENCE_MIN", "0.035"))
 
 
 def _box_center_x(box) -> float:
@@ -363,16 +376,52 @@ def _auto_slot_rects(boxes) -> list:
     return rects
 
 
+def _slot_axis(layout) -> str:
+    return "vertical" if layout.get("slot_axis") == "vertical" else "horizontal"
+
+
+def _physical_slot_order(layout, count: int | None = None) -> list[int]:
+    """Map visual slot index to tray physical slot index."""
+    if count is None:
+        count = len(layout.get("slots") or [])
+    identity = list(range(count))
+    raw = layout.get("physical_slot_order")
+    if not raw:
+        return identity
+    try:
+        order = [int(value) for value in raw]
+    except (TypeError, ValueError):
+        return identity
+    if len(order) != count:
+        return identity
+    if sorted(order) == identity:
+        return order
+    one_based = list(range(1, count + 1))
+    if sorted(order) == one_based:
+        return [value - 1 for value in order]
+    return identity
+
+
+def _physical_slot_for_visual(layout, visual_slot: int,
+                              count: int | None = None) -> int:
+    order = _physical_slot_order(layout, count)
+    if 0 <= visual_slot < len(order):
+        return order[visual_slot]
+    return visual_slot
+
+
 def _slot_rects_for_layout(layout) -> list:
-    """取该面槽位矩形(归一化，左→右)：优先模板显式 `slots`，否则按框 x 自动聚类兜底。"""
+    """取该面槽位矩形；横向左到右，纵向上到下。"""
     slots = layout.get("slots")
     if slots:
-        return sorted(([float(v) for v in s] for s in slots), key=lambda r: r[0])
+        axis = _slot_axis(layout)
+        index = 1 if axis == "vertical" else 0
+        return sorted(([float(v) for v in s] for s in slots), key=lambda r: r[index])
     return _auto_slot_rects(layout.get("boxes", []))
 
 
 def _slot_of_box(box, slot_rects) -> int:
-    """框中心落在哪个槽矩形内 → 返回槽序号；都不在则取 x 最近的槽。"""
+    """框中心落在哪个槽矩形内；越界时取二维中心最近的槽。"""
     if not slot_rects:
         return -1
     cx = _box_center_x(box)
@@ -380,11 +429,13 @@ def _slot_of_box(box, slot_rects) -> int:
     for i, (x0, y0, x1, y1) in enumerate(slot_rects):
         if x0 <= cx <= x1 and y0 <= cy <= y1:
             return i
-    return min(range(len(slot_rects)),
-               key=lambda i: abs(cx - (slot_rects[i][0] + slot_rects[i][2]) / 2))
+    return min(range(len(slot_rects)), key=lambda i: (
+        (cx - (slot_rects[i][0] + slot_rects[i][2]) / 2) ** 2 +
+        (cy - (slot_rects[i][1] + slot_rects[i][3]) / 2) ** 2))
 
 
-def detect_occupied_slots(img: Image.Image, slot_rects, thr: Optional[float] = None) -> list[dict]:
+def detect_occupied_slots(img: Image.Image, slot_rects, thr: Optional[float] = None,
+                          axis: str = "horizontal") -> list[dict]:
     """判每个托盘槽位有没有内存条（边缘/纹理密度）。返回 [{slot,occupied,score,box}]（左→右）。
 
     空槽=光滑塑料→边缘极少；有条=密集芯片+激光小字→边缘多。thr 缺省用 SLOT_PRESENCE_MIN。
@@ -394,7 +445,8 @@ def detect_occupied_slots(img: Image.Image, slot_rects, thr: Optional[float] = N
         thr = _SLOT_PRESENCE_MIN
     W, H = img.size
     out = []
-    for i, rect in enumerate(sorted(slot_rects, key=lambda r: r[0])):
+    index = 1 if axis == "vertical" else 0
+    for i, rect in enumerate(sorted(slot_rects, key=lambda r: r[index])):
         x0, y0, x1, y1 = rect
         cx0, cy0 = max(0, int(x0 * W)), max(0, int(y0 * H))
         cx1, cy1 = min(W, int(x1 * W)), min(H, int(y1 * H))
@@ -492,7 +544,7 @@ def recognize_side(image_path: str, side: str,
 
     # 托盘空位：先判每个槽有没有条 → 空槽整槽跳过
     slot_rects = _slot_rects_for_layout(layout)
-    occ = detect_occupied_slots(img, slot_rects) if slot_rects else []
+    occ = detect_occupied_slots(img, slot_rects, axis=_slot_axis(layout)) if slot_rects else []
     occupied = {o["slot"] for o in occ if o["occupied"]}
     if occ_out is not None:
         occ_out.clear()
@@ -513,7 +565,9 @@ def recognize_side(image_path: str, side: str,
         box_px = _denorm(slot["box"], W, H)
         if _box_kind(img, box_px) == "label":     # 框位压在白标签上 → 整框跳过，别把标签数字当日期
             continue
-        geo = _crop_region_geo(img, box_px)
+        chip_box = stype == "dram" and layout.get("dram_box_mode") == "chip"
+        geo = _crop_region_geo(img, box_px, pad_ratio=0.08 if chip_box else 0.6,
+                               min_h=160 if chip_box else 96)
         crop, ox, oy, cscale = geo if geo else (None, 0, 0, 1.0)
         # 原框在局部图里的位置：裁图带 padding，邻颗日期完全相同，
         # 不给这个约束就可能读到/框到旁边那一颗（见 _roi_local 注释）。
@@ -521,7 +575,8 @@ def recognize_side(image_path: str, side: str,
         if stype == "dram":
             # 只读增强图一次（见 _best_read 注释）；hit 供标注框收紧复用，不再重跑 OCR
             y, w, raw, score, joined, variant, best_img, hit = _best_read(
-                engine, crop, current_year, roi=roi)
+                engine, crop, current_year, roi=roi,
+                try_rot90=layout.get("dram_rotation") == "auto90")
             score = round(score, 3)
             if y:
                 note = "" if variant == "orig" else f"方向/增强校正（{variant}）"
@@ -536,7 +591,7 @@ def recognize_side(image_path: str, side: str,
                               note="OCR 未解码，请人工复核", ocr_raw=raw, ocr_confidence=score)
             dc.slot = box_slot
             # 标注框收紧到只圈数字：复用刚才那次 OCR 的 detection，不再重跑
-            if y:
+            if y and not variant.startswith("rot90"):
                 tb = _tight_box_from_hit(hit, raw, ox, oy, cscale)
                 if tb:
                     dc.box = tb
@@ -610,7 +665,8 @@ def _controller_vl_fallback(image_path: str, codes: list, current_year: int):
 
 def recognize_rules(image_path: str,
                     current_year: Optional[int] = None,
-                    side: Optional[str] = None) -> list[DateCode]:
+                    side: Optional[str] = None,
+                    tile_bands: Optional[int] = None) -> list[DateCode]:
     """规则识别（不依赖固定坐标框）：整图 OCR → 按规则在全图自动找出日期码。
 
     PaddleOCR 扫全图（含分块），再由 `parse_detections` 按规则识别：
@@ -620,7 +676,7 @@ def recognize_rules(image_path: str,
     """
     if current_year is None:
         current_year = datetime.date.today().year
-    dets = recognize(image_path)
+    dets = recognize(image_path, tile_bands=tile_bands)
     codes = parse_detections(dets, current_year=current_year, correct=False)
     img = Image.open(image_path).convert("RGB")
     # 未解码的颗粒 → 裁其框区交大模型兜底（规则模式无逐颗真实分数，仅对未读的兜底）

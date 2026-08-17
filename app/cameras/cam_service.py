@@ -22,9 +22,11 @@ import threading
 import time
 from logging.handlers import RotatingFileHandler
 
-# 触发 .env 载入（HIK_* / CAM_PORT 等），与主进程同一套解析
-from ..storage import db  # noqa: F401  # import 即执行 _load_dotenv()
 from ..core import BASE_DIR
+from ..env_loader import load_project_env
+
+load_project_env(BASE_DIR)
+
 from . import hik_sdk as sdk
 
 log = logging.getLogger("yxq.cam")
@@ -34,7 +36,7 @@ _SINGLE_CAMERA = _CAMERA_MODE == "single"
 _ROLES = () if _CAMERA_MODE == "uvc" else (("front",) if _SINGLE_CAMERA else ("front", "back"))
 CAM_PORT = int(os.environ.get("CAM_PORT", "8811"))
 # 后台 grab 目标帧率（缓冲刷新率）。抓拍/双拍取缓冲最新帧，≤ 1/该值 秒足够新。
-_GRAB_FPS = float(os.environ.get("CAM_GRAB_FPS", "5") or 5)
+_GRAB_FPS = float(os.environ.get("CAM_GRAB_FPS", "12") or 12)
 # 缓冲多久没刷新算"这路相机卡了"（供 /status 与看门狗判活）
 _STALE_SEC = float(os.environ.get("CAM_STALE_SEC", "6") or 6)
 # 连续 grab 失败达此数 → 本进程退出，交给主服务重启（比在进程内反复 _recover 更干脆）
@@ -94,6 +96,7 @@ class _Grabber:
 
     def _loop(self):
         period = 1.0 / max(1.0, _GRAB_FPS)
+        next_grab = time.monotonic()
         cam = None
         while self._run:
             # 暂停(把相机让给 MVS 调参)：关闭句柄释放相机，空转等 resume。清空计数避免误触发看门狗。
@@ -116,7 +119,12 @@ class _Grabber:
                     self._arr = arr
                     self._ts = time.time()
                 self._fails = 0
-                time.sleep(period)
+                next_grab += period
+                delay = next_grab - time.monotonic()
+                if delay > 0:
+                    time.sleep(delay)
+                else:
+                    next_grab = time.monotonic()
             except Exception as e:  # noqa: BLE001
                 self._fails += 1
                 if self._fails == 1 or self._fails % 10 == 0:
@@ -193,19 +201,31 @@ def build_app():
         arr, ts = g.latest()
         if arr is None:
             return JSONResponse({"error": "暂无帧（相机预热中或已卡）"}, status_code=503)
-        return Response(content=_encode_jpeg(arr, quality), media_type="image/jpeg")
+        age_ms = max(0, round((time.time() - ts) * 1000))
+        return Response(
+            content=_encode_jpeg(arr, quality),
+            media_type="image/jpeg",
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                "Pragma": "no-cache",
+                "X-Frame-Timestamp": f"{ts:.6f}",
+                "X-Frame-Age-Ms": str(age_ms),
+            },
+        )
 
     @app.get("/preview")
     def preview(role: str = "front", quality: int = 70, max_fps: int = 0):
         r = _role(role)
         g = _grabbers[r]
-        fps = max_fps or int(os.environ.get("HIK_PREVIEW_FPS", "5") or 5)
+        fps = max_fps or int(os.environ.get("HIK_PREVIEW_FPS", "8") or 8)
         period = 1.0 / max(1, fps)
         pw = int(os.environ.get("HIK_PREVIEW_W", "0") or 0)
 
         def gen():
             import cv2
             miss = 0
+            last_ts = 0.0
+            next_send = time.monotonic()
             while True:
                 arr, ts = g.latest()
                 if arr is None:
@@ -215,15 +235,34 @@ def build_app():
                     time.sleep(0.15)
                     continue
                 miss = 0
+                if ts <= last_ts:
+                    time.sleep(min(period / 4, 0.01))
+                    continue
+                delay = next_send - time.monotonic()
+                if delay > 0:
+                    time.sleep(delay)
+                    continue
                 if pw and arr.shape[1] > pw:
                     nh = int(arr.shape[0] * pw / arr.shape[1])
                     arr = cv2.resize(arr, (pw, nh))
                 jpg = _encode_jpeg(arr, quality)
                 yield (b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
-                       + str(len(jpg)).encode() + b"\r\n\r\n" + jpg + b"\r\n")
-                time.sleep(period)
+                       + str(len(jpg)).encode()
+                       + b"\r\nX-Frame-Timestamp: " + f"{ts:.6f}".encode()
+                       + b"\r\n\r\n" + jpg + b"\r\n")
+                last_ts = ts
+                next_send = max(next_send + period, time.monotonic())
 
-        return StreamingResponse(gen(), media_type="multipart/x-mixed-replace; boundary=frame")
+        return StreamingResponse(
+            gen(),
+            media_type="multipart/x-mixed-replace; boundary=frame",
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     @app.post("/snapshot")
     def snapshot(path: str = Form(...), role: str = Form("front"), quality: int = Form(90)):

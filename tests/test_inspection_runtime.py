@@ -1,5 +1,7 @@
 import time
 
+from PIL import Image
+
 from app import metrics, services
 from app.recognition.date_parser import DateCode
 
@@ -28,6 +30,32 @@ def test_rule_codes_are_assigned_to_physical_slots():
     services._assign_rule_codes_to_slots(core, slot_info)
     assert code.slot == 1
     assert core["stick_total"] == 2
+
+
+def test_pre_crops_maps_back_visual_slots_to_physical_slots(monkeypatch, tmp_path):
+    front = tmp_path / "front.png"
+    back = tmp_path / "back.png"
+    Image.new("RGB", (40, 20), (255, 255, 255)).save(front)
+    Image.new("RGB", (40, 20), (255, 255, 255)).save(back)
+    tpl = {
+        "sides": {
+            "front": {"slots": [[0, 0, 0.25, 1], [0.25, 0, 0.5, 1],
+                                [0.5, 0, 0.75, 1], [0.75, 0, 1, 1]],
+                      "slot_axis": "horizontal"},
+            "back": {"slots": [[0, 0, 0.25, 1], [0.25, 0, 0.5, 1],
+                               [0.5, 0, 0.75, 1], [0.75, 0, 1, 1]],
+                     "slot_axis": "horizontal",
+                     "physical_slot_order": [3, 2, 1, 0]},
+        }
+    }
+    monkeypatch.setattr(services, "_slot_template", lambda _template_id: ("test", tpl))
+    monkeypatch.setattr(services, "_crop_slot", lambda _src, box, tag: f"{tag}:{box}")
+    monkeypatch.setattr(services, "UPLOAD_DIR", str(tmp_path))
+
+    info = services._pre_crops({"front": str(front), "back": str(back)}, "u1", "geo", "test")
+
+    assert info["boxes"][("back", 0)] == [30, 0, 40, 20]
+    assert info["boxes"][("back", 3)] == [0, 0, 10, 20]
 
 
 def test_parallel_local_label_decode_uses_wall_clock(monkeypatch):
@@ -69,3 +97,52 @@ def test_record_verdict_depends_only_on_date():
     assert rec["comp_ok"] is None
     assert "外观异常" not in rec["fail_desc"]
     assert rec["sn_unread"] is True
+
+
+def test_record_keeps_date_status_for_frontend():
+    rec = services.build_record(
+        {"dates": {"controller_status": "covered", "pcb_status": "raw"}},
+        {},
+        {"sn": "SN1"},
+        "tester",
+    )
+
+    assert rec["label_data"]["date_status"] == {
+        "controller": "covered",
+        "pcb": "raw",
+    }
+
+
+def test_stick_summary_exposes_chip_date_details():
+    record = {
+        "slot_pos": 1,
+        "verdict": "pass",
+        "sn": "SN-1",
+        "brand": "Samsung",
+        "model": "M321R",
+        "capacity": "64GB",
+        "frequency": "5600",
+        "spec": "64GB 2Rx4 PC5-5600",
+        "mfg": "LOT-9",
+        "label_data": {"date_status": {"controller": "covered"}},
+        "sn_unread": False,
+        "controller_date": None,
+        "pcb_date": "202540",
+        "storage_chips": [
+            {"idx": 1, "side": "front", "yyyyww": "202534", "status": "ok"},
+            {"idx": 2, "side": "back", "yyyyww": "202535", "status": "ok"},
+        ],
+        "fail_desc": "",
+        "date_ok": True,
+        "comp_ok": None,
+        "gold_finger_ok": None,
+        "chip_mark_ok": None,
+    }
+
+    summary = services._stick_summary(record, 9)
+
+    assert summary["capacity"] == "64GB"
+    assert summary["pcb_date"] == "202540"
+    assert summary["controller_status"] == "covered"
+    assert summary["storage_count"] == 2
+    assert summary["storage_chips"][0]["yyyyww"] == "202534"

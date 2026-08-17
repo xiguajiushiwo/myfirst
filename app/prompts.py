@@ -31,15 +31,16 @@ C. 存储芯片上的二维码状标记：每颗存储颗粒（板上深色方�
 }"""
 
 
-def appearance_tray(n: int, slots: list) -> str:
+def appearance_tray(n: int, slots: list, axis: str = "vertical") -> str:
     """整盘一次判 n 根的外观质检提示词（省掉逐根 n 次调用的固定开销）。
 
     slots 为这盘实际有条的槽号(1..N，左→右)，模型必须按这个槽号逐根输出，
     数组元素数必须等于 n——否则上层会判为串位、退回逐根调用。
     """
     slot_txt = "、".join(f"第{s}槽" for s in slots)
+    order_text = "从上到下" if axis == "vertical" else "从左到右"
     return f"""你是资深的内存条(RAM 内存条)外观质检员。下面给你**同一个托盘**的照片\
-（第一张是整盘正面、第二张是整盘背面）。盘上从左到右并排放着 {n} 根内存条，依次是 {slot_txt}。
+（第一张是整盘正面、第二张是整盘背面）。盘上{order_text}排列着 {n} 根内存条，依次是 {slot_txt}。
 
 **务必逐根独立检查、独立给结论**，不要把某一根的问题算到别根上，也不要用"多数情况"概括。
 对每一根，检查下面三项：
@@ -52,7 +53,7 @@ C. 存储芯片上的二维码状标记：每颗存储颗粒（板上深色方�
    正常的标记内部能看到清晰的「线条 / 网格纹理」；
    异常的标记里只有一些零散的小点而没有线条。
 
-只输出一个 JSON 数组，**元素个数必须正好 {n} 个**，按从左到右的顺序、slot 用上面给的槽号：
+只输出一个 JSON 数组，**元素个数必须正好 {n} 个**，按{order_text}的顺序、slot 用上面给的槽号：
 [{{"slot": {slots[0] if slots else 1},
   "components": {{"damaged": false, "blackened": false, "detail": "简述"}},
   "gold_finger": {{"normal": true, "detail": "简述"}},

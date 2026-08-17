@@ -29,20 +29,24 @@ EMPTY_COLOR = (150, 150, 150)    # 灰：完全没读到文字
 def _label_and_color(c, type_color):
     """决定标签文字与颜色。
 
-    存储颗粒带序号前缀（如 "3.25年34周"），便于和不合格说明里的"第N颗"对应。
-    解码成功 → 「YY年WW周」(类型色)；未解码 → 原样显示 OCR 原始读数(橙)；
-    完全无读数 → 「未识别」(灰)。不做任何预测/校正。
+    存储颗粒只显示日期；主控和 PCB 分别显示「主：」和「PCB：」前缀。
+    解码成功 -> 「YY年WW周」(类型色)；主控被标签遮挡 -> 「主：被遮挡」(灰)；
+    未解码 -> 原样显示 OCR 原始读数(橙)；完全无读数 -> 「未识别」(灰)。
+    不做任何预测/校正。
     """
-    pre = ""
-    if c.code_type == "dram" and getattr(c, "idx", None):
-        pre = f"{c.idx}."
+    prefix = {
+        "controller": "主：",
+        "pcb": "PCB：",
+    }.get(c.code_type, "")
     if c.week:
-        return f"{pre}{c.year % 100}年{c.week}周", type_color
-    # 读不出：原样展示 OCR 原始读数（错的也输出，不显示"遮挡"）；完全无读数才「未识别」
+        return f"{prefix}{c.year % 100}年{c.week}周", type_color
+    if c.code_type == "controller" and getattr(c, "status", "") == "covered":
+        return prefix + "被遮挡", EMPTY_COLOR
+    # 读不出：原样展示 OCR 原始读数（错的也输出）；完全无读数才「未识别」
     raw = (getattr(c, "raw", "") or "").strip()
     if raw:
-        return (pre + raw[:10], RAW_COLOR)
-    return pre + "未识别", EMPTY_COLOR
+        return (prefix + raw[:10], RAW_COLOR)
+    return prefix + "未识别", EMPTY_COLOR
 
 # 中文字体候选（Windows 自带）
 _FONT_CANDIDATES = [

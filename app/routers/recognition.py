@@ -44,17 +44,14 @@ def template_for_order(batch_id: int):
             "calibrated": True,
         }}
     except ValueError as exc:
-        family = services._batch_product_family(batch)
-        pending_id = "hynix-64gb-5600-pending" if family == "hynix" else ""
-        pending = template_store.get_template(pending_id) if pending_id else {}
         return {"ok": True, "ready": False, "order": batch, "error": str(exc), "template": {
-            "id": pending_id,
-            "brand": (pending or {}).get("brand", ""),
-            "model": (pending or {}).get("model", ""),
-            "capacity": (pending or {}).get("capacity", ""),
-            "frequency": (pending or {}).get("frequency", ""),
+            "id": "",
+            "brand": "",
+            "model": "",
+            "capacity": "",
+            "frequency": "",
             "calibrated": False,
-            "requirements": (pending or {}).get("requirements", []),
+            "requirements": [],
         }}
 
 

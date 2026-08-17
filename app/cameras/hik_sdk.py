@@ -627,8 +627,10 @@ def resume():
 # 若换机位不对，用 /api/hik/orient 一键切 none/fliph/flipv/rot180 再实测。
 _ORIENT_MODES = ("none", "fliph", "flipv", "rot180")
 _ROLE_ORIENT = {
-    "front": os.environ.get("HIK_FRONT_ORIENT", "none").strip().lower(),
-    "back":  os.environ.get("HIK_BACK_ORIENT", "rot180").strip().lower(),
+    "front": (param_store.load_role("front").get("orient") or
+              os.environ.get("HIK_FRONT_ORIENT", "none")).strip().lower(),
+    "back":  (param_store.load_role("back").get("orient") or
+              os.environ.get("HIK_BACK_ORIENT", "rot180")).strip().lower(),
 }
 for _r in ("front", "back"):
     if _ROLE_ORIENT[_r] not in _ORIENT_MODES:
@@ -740,6 +742,7 @@ def set_orient(role: str, mode: str) -> str:
     if mode not in _ORIENT_MODES:
         raise ValueError(f"方向模式必须是 {'/'.join(_ORIENT_MODES)} 之一")
     _ROLE_ORIENT[role] = mode
+    param_store.save_role(role, orient=mode)
     cam = _cams.get(role)
     if cam is not None:
         cam.orient = mode                       # 已打开的实例也立刻改

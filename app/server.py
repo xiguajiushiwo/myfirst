@@ -12,6 +12,7 @@ cameras（UVC + 海康）、records（记录/操作人）、pipeline（自动流
 from __future__ import annotations
 
 import os
+import threading
 import time
 
 from fastapi import FastAPI, Request
@@ -25,7 +26,7 @@ from .recognition import ocr_engine, template_store
 from .storage import db
 from .cameras import hik_camera as hik
 from .routers import (auth as auth_router, batches, cameras, pipeline, records,
-                      recognition, settings as settings_router)
+                      recognition, remote_jobs, settings as settings_router)
 
 setup_logging()
 log = get_logger("yxq.server")
@@ -85,6 +86,8 @@ _ADMIN_API_PREFIX = "/api/users"
 async def _auth_guard(request: Request, call_next):
     """登录门禁：未登录 → 页面跳 /login、接口 401；质检员访问管理员页/接口 → 挡回。"""
     p = request.url.path
+    if p.startswith("/api/remote/"):
+        return await call_next(request)
     if p in _PUBLIC_PATHS:
         return await call_next(request)
     user = auth.current_user(request)
@@ -130,8 +133,8 @@ def index():
 
 @app.get("/workbench")
 def workbench():
-    """质检工作台：双相机采集 + 识别 + 逐颗判定 + 入库（原首页）。"""
-    return _page("index.html")
+    """远程质检工作台：笔记本采集相机原图，服务器负责识别与入库。"""
+    return _page("camera.html")
 
 
 @app.get("/orders")
@@ -142,8 +145,8 @@ def orders_page():
 
 @app.get("/camera")
 def camera_page():
-    """相机调试：双预览 + 每台曝光/增益/翻转/方向校正（参数服务端全局，工作台自动生效）。"""
-    return _page("camera.html")
+    """相机调试：客户机双预览 + 每台曝光/增益/方向校正 + 单路全屏调焦。"""
+    return _page("camera_debug.html")
 
 
 @app.get("/operators")
@@ -246,10 +249,36 @@ app.include_router(records.router)
 app.include_router(pipeline.router)
 app.include_router(batches.router)
 app.include_router(settings_router.router)
+app.include_router(remote_jobs.router)
 
 
 # ---- 相机子进程：主服务启动即拉起并监督，退出时回收（相机 SDK 隔离在子进程，卡死可秒级重启）----
 from .cameras import cam_supervisor
+from .remote_jobs import manager as remote_job_manager
+
+
+@app.on_event("startup")
+def _start_remote_jobs():
+    remote_job_manager.start()
+
+
+@app.on_event("startup")
+def _warmup_ocr_models():
+    """后台预加载 OCR，避免第一次检测把模型初始化时间算进识别耗时。"""
+    if os.environ.get("OCR_WARMUP", "1") != "1":
+        log.info("OCR 预热已禁用（OCR_WARMUP=0）")
+        return
+
+    def _worker():
+        started = time.perf_counter()
+        try:
+            ocr_engine.get_component_engine()
+            ocr_engine.get_engine()
+            log.info("OCR 模型预热完成 %.1fs", time.perf_counter() - started)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("OCR 模型预热失败，首次识别时再加载：%s", exc)
+
+    threading.Thread(target=_worker, name="ocr-warmup", daemon=True).start()
 
 
 @app.on_event("startup")
@@ -279,6 +308,11 @@ def _stop_camera_service():
 @app.on_event("shutdown")
 def _stop_order_sync():
     batches.stop_order_sync()
+
+
+@app.on_event("shutdown")
+def _stop_remote_jobs():
+    remote_job_manager.stop()
 
 
 if __name__ == "__main__":

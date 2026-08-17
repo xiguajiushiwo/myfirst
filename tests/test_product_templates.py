@@ -18,8 +18,23 @@ def test_samsung_64g_5600_uses_calibrated_template():
     assert services._resolve_product_template(_batch("Samsung"), None) == "samsung-4up-0808"
 
 
+def test_samsung_spec_field_can_drive_template_selection():
+    batch = _batch("三星", capacity="", frequency="")
+    batch["kd_specification"] = "64G 5600"
+
+    assert services._resolve_product_template(batch, None) == "samsung-4up-0808"
+
+
+def test_samsung_other_frequency_is_blocked():
+    batch = _batch("三星", capacity="", frequency="")
+    batch["kd_specification"] = "64G 3200"
+
+    with pytest.raises(ValueError, match="当前只配置了三星 64GB 5600"):
+        services._resolve_product_template(batch, None)
+
+
 def test_hynix_64g_5600_is_blocked_until_calibrated():
-    with pytest.raises(ValueError, match="海力士 64GB 5600识别模板尚未标定"):
+    with pytest.raises(ValueError, match="海力士识别模板已删除"):
         services._resolve_product_template(_batch("SK Hynix"), None)
 
 
@@ -33,15 +48,15 @@ def test_mixed_brand_order_is_blocked():
         services._resolve_product_template(_batch("三星 / 海力士"), None)
 
 
-def test_order_template_endpoint_reports_hynix_requirements(monkeypatch):
+def test_order_template_endpoint_reports_no_hynix_template(monkeypatch):
     monkeypatch.setattr(recognition.db, "get_batch", lambda _batch_id: _batch("SK Hynix"))
 
     result = recognition.template_for_order(1)
 
     assert result["ok"] is True
     assert result["ready"] is False
-    assert result["template"]["id"] == "hynix-64gb-5600-pending"
-    assert result["template"]["requirements"]
+    assert result["template"]["id"] == ""
+    assert result["template"]["requirements"] == []
 
 
 def test_order_template_endpoint_returns_samsung_profile(monkeypatch):

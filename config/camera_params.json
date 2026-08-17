@@ -1,10 +1,12 @@
 {
   "front": {
     "exp_us": 10000.0,
-    "gain_db": 0.0
+    "gain_db": 0.0,
+    "orient": "none"
   },
   "back": {
-    "exp_us": 12000.0,
-    "gain_db": 0.0
+    "exp_us": 15000.0,
+    "gain_db": 0.0,
+    "orient": "rot180"
   }
 }

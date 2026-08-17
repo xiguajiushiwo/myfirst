@@ -23,6 +23,7 @@ from collections import Counter
 from typing import Optional
 
 TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
+DEFAULT_TEMPLATE_ID = "samsung-4up-0808"
 
 _lock = threading.Lock()
 _cache: dict[str, dict] = {}
@@ -74,6 +75,8 @@ def list_templates() -> list[dict]:
             continue
         if not tpl:
             continue
+        if tpl.get("retired") is True:
+            continue
         items.append({
             "id": tpl.get("id", tid),
             "brand": tpl.get("brand", ""),
@@ -105,6 +108,9 @@ def get_template(template_id: str) -> Optional[dict]:
 
 def default_template_id() -> Optional[str]:
     """识别时未指定模板时的兜底（只取已标定模板）。"""
+    default = get_template(DEFAULT_TEMPLATE_ID)
+    if default and default.get("calibrated", True) is not False:
+        return DEFAULT_TEMPLATE_ID
     items = [item for item in list_templates() if item.get("calibrated")]
     return items[0]["id"] if items else None
 

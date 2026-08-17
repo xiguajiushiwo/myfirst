@@ -54,6 +54,8 @@ def test_counts_and_dates_per_stick():
     # 每根各自的结构化日期（storage_chips 只含本根颗粒）
     assert len(sticks[0]["dates"]["storage_chips"]) == 3
     assert len(sticks[1]["dates"]["storage_chips"]) == 5
+    assert {c["slot"] for c in sticks[0]["dates"]["storage_chips"]} == {1}
+    assert {c["slot"] for c in sticks[1]["dates"]["storage_chips"]} == {2}
 
 
 def test_no_slot_returns_empty():

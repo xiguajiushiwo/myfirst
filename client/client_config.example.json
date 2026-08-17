@@ -1,0 +1,7 @@
+{
+  "server_url": "http://192.168.1.148:8000",
+  "api_key": "replace-with-the-same-key-as-server",
+  "station_id": "QC-01",
+  "cache_dir": "D:/QC_CACHE",
+  "timeout_seconds": 180
+}

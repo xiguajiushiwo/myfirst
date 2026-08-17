@@ -11,6 +11,8 @@ wheels/
 
 # Secrets —— 含数据库口令、大模型 API Key，绝不能进版本库
 .env
+/client/client_config.json
+/client_data/
 
 # 运行时产物（跑一次就重新生成，且体积巨大）
 # archive 2.7GB / logs 228MB / uploads 216MB —— 全是每次质检落盘的原图和标注图。
@@ -60,3 +62,11 @@ wheels/
 /scripts/update_work_sheet_current_capability.py
 /scripts/update_work_sheet_reflection_standard.py
 /scripts/update_work_sheet_speed.py
+
+# Runtime/debug artifacts from local validation
+/downloads/
+/tmp_progress_workbook/
+/all_mb/
+/server.stdout.log
+/server.stderr.log
+/tmp_detect_cookie.txt

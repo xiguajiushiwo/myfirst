@@ -365,7 +365,7 @@ def _verdict(parsed: dict) -> tuple[bool, list[str]]:
 
 
 def inspect_tray(front_path: str | None, back_path: str | None,
-                 slots: list) -> dict | None:
+                 slots: list, axis: str = "vertical") -> dict | None:
     """**整盘一次**外观质检：一次调用判 n 根，返回 {slot: 单根结果}。
 
     为什么：逐根调用要发 n×2 张图、付 n 次网络+排队固定开销（实测四根并行仍 ~11.6s）。
@@ -384,7 +384,7 @@ def inspect_tray(front_path: str | None, back_path: str | None,
         _old = os.environ.get("QWEN_MAX_SIDE")
         os.environ["QWEN_MAX_SIDE"] = os.environ.get("TRAY_MAX_SIDE", "1280")
         try:
-            raw = _call_qwen(images, prompts.appearance_tray(len(slots), list(slots)))
+            raw = _call_qwen(images, prompts.appearance_tray(len(slots), list(slots), axis))
         finally:
             if _old is None:
                 os.environ.pop("QWEN_MAX_SIDE", None)

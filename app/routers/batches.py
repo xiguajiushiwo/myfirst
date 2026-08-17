@@ -20,19 +20,17 @@ from ..storage import db
 router = APIRouter()
 
 _SYNC_INTERVAL = max(60, int(os.environ.get("KD_SYNC_INTERVAL", "900") or 900))
-_FULL_SYNC_INTERVAL = max(_SYNC_INTERVAL, int(os.environ.get("KD_FULL_SYNC_INTERVAL", "21600") or 21600))
 _INCREMENTAL_PAGES = max(1, int(os.environ.get("KD_INCREMENTAL_PAGES", "1") or 1))
 _sync_lock = threading.Lock()
 _sync_stop = threading.Event()
 _sync_thread: threading.Thread | None = None
-_sync_started_at = time.time()
 _SYNC_STATE_FILE = Path(os.environ.get(
     "KD_SYNC_STATE_FILE",
     str(Path(__file__).resolve().parents[2] / "config" / "kingdee_sync_state.json"),
 ))
 _sync_state = {
     "running": False, "last_started": 0.0, "last_success": 0.0,
-    "last_full_success": 0.0, "last_mode": "", "last_imported": 0,
+    "last_mode": "", "last_imported": 0,
     "last_error": "", "last_error_at": 0.0, "consecutive_failures": 0,
 }
 
@@ -101,6 +99,7 @@ def create_batch(
     remark: str = Form(""),
     model: str = Form(""),
     supplier: str = Form(""),
+    kd_specification: str = Form(""),
     qty_expected: int = Form(0),
     delivery_date: str = Form(""),
     oa_order_no: str = Form(""),
@@ -111,9 +110,10 @@ def create_batch(
     try:
         bid = db.create_batch(batch_no, customer, brand, capacity, frequency, cond, remark,
                               model=model, supplier=supplier, qty_expected=qty_expected,
-                              delivery_date=delivery_date, oa_order_no=oa_order_no)
+                              delivery_date=delivery_date, oa_order_no=oa_order_no,
+                              kd_specification=kd_specification)
         db.add_audit(customer, "create_batch", batch_no or str(bid),
-                     f"{brand}/{model}/{capacity}/{frequency}/{supplier}/应检{qty_expected}")
+                     f"{brand}/{model}/{kd_specification}/{supplier}/应检{qty_expected}")
         return {"ok": True, "id": bid, "batch": db.get_batch(bid)}
     except Exception as e:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
@@ -176,17 +176,22 @@ def _import_orders(res: dict, source: str = "oa"):
 
 
 def _sync_kingdee(full: bool = False, force: bool = False) -> dict:
-    """Run one guarded sync. Recent sync reads only the newest Kingdee page."""
+    """Run one guarded incremental sync.
+
+    ``full`` is kept only for old callers. The system now always reads the newest
+    Kingdee page(s), so a stale full-sync button or retry cannot pull every item
+    back into local orders.
+    """
     now = time.time()
-    if not force and not full and now - float(_sync_state["last_success"] or 0) < _SYNC_INTERVAL:
+    if not force and now - float(_sync_state["last_success"] or 0) < _SYNC_INTERVAL:
         return {"ok": True, "skipped": True, "reason": "cooldown", **sync_status()}
     if not _sync_lock.acquire(blocking=False):
         return {"ok": True, "skipped": True, "reason": "running", **sync_status()}
-    mode = "full" if full else "incremental"
+    mode = "incremental"
     _sync_state.update(running=True, last_started=now, last_mode=mode)
     try:
-        pages = None if full else _INCREMENTAL_PAGES
-        result = kingdee.fetch_orders(page_size=100, max_pages=pages, recent=not full)
+        pages = _INCREMENTAL_PAGES
+        result = kingdee.fetch_orders(page_size=100, max_pages=pages, recent=True)
         imported = _import_orders(result, source="kingdee")
         payload = imported.body if isinstance(imported, JSONResponse) else None
         if payload is not None:
@@ -202,8 +207,6 @@ def _sync_kingdee(full: bool = False, force: bool = False) -> dict:
             last_error_at=0.0,
             consecutive_failures=0,
         )
-        if full:
-            _sync_state["last_full_success"] = finished
         _save_sync_state()
         return {**imported, "mode": mode, "pages": pages, "skipped": False}
     except Exception as exc:  # noqa: BLE001
@@ -223,14 +226,12 @@ def sync_status() -> dict:
     return {
         "running": bool(_sync_state["running"]),
         "last_success": float(_sync_state["last_success"] or 0),
-        "last_full_success": float(_sync_state["last_full_success"] or 0),
         "last_mode": _sync_state["last_mode"],
         "last_imported": int(_sync_state["last_imported"] or 0),
         "last_error": _sync_state["last_error"],
         "last_error_at": float(_sync_state["last_error_at"] or 0),
         "consecutive_failures": int(_sync_state["consecutive_failures"] or 0),
         "interval_seconds": _SYNC_INTERVAL,
-        "full_interval_seconds": _FULL_SYNC_INTERVAL,
         "configured": kingdee.is_configured(),
         "scheduler_running": bool(_sync_thread and _sync_thread.is_alive()),
     }
@@ -240,9 +241,7 @@ def _sync_loop() -> None:
     if _sync_stop.wait(10):
         return
     while not _sync_stop.is_set():
-        full_reference = float(_sync_state["last_full_success"] or _sync_started_at)
-        full_due = time.time() - full_reference >= _FULL_SYNC_INTERVAL
-        _sync_kingdee(full=full_due)
+        _sync_kingdee()
         _sync_stop.wait(_SYNC_INTERVAL)
 
 
@@ -290,7 +289,7 @@ def sync_oa(billno: str = Form(""), full: bool = Form(False), force: bool = Form
     if kingdee.is_configured():
         if billno.strip():
             return _import_one_order(kingdee.fetch_order(billno), source="kingdee")
-        return _sync_kingdee(full=full, force=force)
+        return _sync_kingdee(force=force)
     return _import_orders(oa.fetch_orders(), source="oa")
 
 

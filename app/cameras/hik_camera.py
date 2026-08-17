@@ -141,7 +141,7 @@ def mjpeg(role: str = "front", **kw):
         try:
             with urllib.request.urlopen(url, timeout=10.0) as resp:
                 while True:
-                    chunk = resp.read(65536)
+                    chunk = resp.read1(16384)
                     if not chunk:
                         break
                     yield chunk

@@ -17,6 +17,7 @@ from PIL import Image
 
 from app.recognition import template_store
 from app.recognition.region_ocr import (_slot_rects_for_layout,
+                                         _slot_axis,
                                          detect_occupied_slots,
                                          _SLOT_PRESENCE_MIN)
 
@@ -38,7 +39,7 @@ def main(argv):
     rects = _slot_rects_for_layout(layout)
     explicit = bool(layout.get("slots"))
     img = Image.open(img_path).convert("RGB")
-    occ = detect_occupied_slots(img, rects)
+    occ = detect_occupied_slots(img, rects, axis=_slot_axis(layout))
 
     print(f"模板={tid} side={side} 图={img_path} 尺寸={img.size}")
     print(f"槽来源={'显式 slots' if explicit else '自动聚类兜底'}  当前阈值 SLOT_PRESENCE_MIN={_SLOT_PRESENCE_MIN}")

@@ -48,6 +48,7 @@ def test_oa_not_configured_returns_error(monkeypatch):
     # 未配置 → 明确 ok:False，绝不假成功
     monkeypatch.setattr(oa, "_BASE_URL", "")
     monkeypatch.setattr(oa, "_TOKEN", "")
+    monkeypatch.setattr(oa, "_DEMO", False)
     assert oa.is_configured() is False
     r = oa.fetch_orders()
     assert r["ok"] is False and "未配置" in r["error"]

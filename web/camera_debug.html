@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>相机调试 · 云小圈AI硬件质检系统</title>
+<link rel="icon" href="/favicon.png">
+<script src="/sync-alert.js" defer></script>
+<style>
+:root{
+  --ink:#1d2330;
+  --muted:#6b7280;
+  --faint:#9aa4b2;
+  --line:rgba(20,40,80,.12);
+  --line-strong:rgba(20,40,80,.22);
+  --blue:#0a5cd5;
+  --orange:#fc8615;
+  --green:#0f9d58;
+  --red:#d93025;
+  --panel:rgba(255,255,255,.74);
+  --shadow:0 12px 34px rgba(30,60,120,.10);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  min-height:100vh;
+  color:var(--ink);
+  font:14px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  background:
+    radial-gradient(1100px 700px at 12% 8%, rgba(252,134,21,.16), transparent 55%),
+    radial-gradient(1200px 800px at 92% 90%, rgba(10,92,213,.18), transparent 58%),
+    linear-gradient(135deg,#eef1fb 0%,#e8eefc 40%,#f3ecfb 100%);
+  overflow:hidden;
+}
+button,input,select{font:inherit}
+.topbar{
+  height:68px;
+  display:flex;
+  align-items:center;
+  gap:14px;
+  padding:12px 24px;
+  border-bottom:1px solid rgba(255,255,255,.86);
+  background:rgba(255,255,255,.68);
+  backdrop-filter:saturate(180%) blur(18px);
+  box-shadow:0 6px 24px rgba(30,60,120,.06);
+}
+.logo{width:40px;height:40px;border-radius:8px;object-fit:contain}
+.brand{line-height:1.18}
+.sysname{font-size:12px;color:var(--muted)}
+.title{font-size:18px;font-weight:900}
+.spacer{flex:1}
+.pill{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  border:1px solid rgba(255,255,255,.85);
+  background:rgba(255,255,255,.65);
+  color:var(--muted);
+  border-radius:999px;
+  padding:7px 13px;
+  font-size:12px;
+  font-weight:800;
+  white-space:nowrap;
+}
+.pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.pill.ok{color:var(--green);background:#e8f7ef;border-color:#bfe5d0}
+.pill.fail{color:var(--red);background:#fff0ee;border-color:#f0c2bd}
+.navbtn{
+  border:1px solid var(--line-strong);
+  background:rgba(255,255,255,.84);
+  color:var(--blue);
+  border-radius:999px;
+  padding:8px 15px;
+  text-decoration:none;
+  font-weight:850;
+  cursor:pointer;
+}
+.navbtn:hover{background:var(--blue);border-color:var(--blue);color:#fff}
+.page{
+  height:calc(100vh - 68px);
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 360px;
+  gap:12px;
+  padding:12px;
+}
+.preview-panel,.side-panel{
+  min-height:0;
+  border:1px solid rgba(255,255,255,.92);
+  background:var(--panel);
+  border-radius:18px;
+  box-shadow:var(--shadow);
+  backdrop-filter:blur(10px);
+  overflow:hidden;
+}
+.preview-panel{display:flex;flex-direction:column}
+.panel-head{
+  min-height:48px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:10px 14px;
+  border-bottom:1px solid var(--line);
+  background:rgba(255,255,255,.44);
+}
+.panel-title{font-weight:950;font-size:15px}
+.panel-note{margin-left:auto;color:var(--muted);font-size:12px;font-weight:750}
+.view-grid{
+  flex:1;
+  min-height:0;
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;
+  padding:10px;
+}
+.feed{
+  position:relative;
+  min-width:0;
+  min-height:0;
+  margin:0;
+  overflow:hidden;
+  border-radius:12px;
+  background:#05080d;
+  border:1px solid rgba(0,0,0,.25);
+}
+.feed:fullscreen{
+  width:100vw;
+  height:100vh;
+  border-radius:0;
+  border:0;
+  background:#000;
+}
+.feed:-webkit-full-screen{
+  width:100vw;
+  height:100vh;
+  border-radius:0;
+  border:0;
+  background:#000;
+}
+.feed img{
+  width:100%;
+  height:100%;
+  display:block;
+  object-fit:contain;
+  background:#05080d;
+  transform-origin:center center;
+  user-select:none;
+  touch-action:none;
+  cursor:grab;
+  will-change:transform;
+}
+.feed img.dragging{cursor:grabbing}
+.feed-label{
+  position:absolute;
+  left:10px;
+  top:10px;
+  z-index:5;
+  display:flex;
+  align-items:center;
+  gap:9px;
+  padding:7px 10px;
+  border-radius:9px;
+  background:rgba(12,18,28,.82);
+  border:1px solid rgba(255,255,255,.12);
+  color:#e8eef8;
+  font-size:12px;
+  font-weight:900;
+  backdrop-filter:blur(8px);
+}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--faint)}
+.dot.ok{background:#27d17f}
+.dot.fail{background:#ff6b5d}
+.tools{
+  position:absolute;
+  right:10px;
+  bottom:10px;
+  z-index:5;
+  display:flex;
+  align-items:center;
+  gap:7px;
+  padding:7px;
+  border-radius:10px;
+  background:rgba(12,18,28,.86);
+  border:1px solid rgba(255,255,255,.14);
+  backdrop-filter:blur(8px);
+}
+.tool-btn{
+  min-width:34px;
+  height:30px;
+  border:1px solid rgba(255,255,255,.16);
+  border-radius:8px;
+  background:rgba(255,255,255,.08);
+  color:#fff;
+  cursor:pointer;
+  font-weight:950;
+}
+.tool-btn:hover{background:rgba(255,255,255,.18)}
+.zoom-val{min-width:48px;text-align:center;color:#dbe7f5;font:12px/1.2 Consolas,monospace}
+.side-panel{
+  overflow:auto;
+  padding-bottom:10px;
+}
+.section{padding:14px;border-bottom:1px solid var(--line)}
+.section:last-child{border-bottom:0}
+.section h2{font-size:14px;margin:0 0 10px;font-weight:950}
+.status-list{display:grid;gap:8px}
+.kv{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  padding:8px 10px;
+  border:1px solid var(--line);
+  background:rgba(255,255,255,.62);
+  border-radius:10px;
+  font-size:12px;
+}
+.kv b{font-weight:850}
+.kv span:last-child{text-align:right;color:var(--muted);word-break:break-word}
+.action-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.btn{
+  min-height:36px;
+  border:1px solid var(--line-strong);
+  border-radius:10px;
+  background:#fff;
+  color:var(--ink);
+  cursor:pointer;
+  font-weight:900;
+}
+.btn.primary{background:linear-gradient(135deg,#0a5cd5,#3f86ff);border-color:transparent;color:#fff}
+.btn.warn{background:linear-gradient(135deg,#fc8615,#ff9f45);border-color:transparent;color:#fff}
+.btn:disabled{opacity:.58;cursor:not-allowed}
+.camera-card{
+  margin-top:10px;
+  border:1px solid var(--line);
+  background:rgba(255,255,255,.66);
+  border-radius:12px;
+  padding:11px;
+}
+.camera-title{font-weight:950;margin-bottom:9px}
+.field{
+  display:grid;
+  grid-template-columns:58px minmax(0,1fr) 40px;
+  gap:8px;
+  align-items:center;
+  margin-top:8px;
+}
+.field label{font-size:12px;color:var(--muted);font-weight:850}
+.field input,.field select{
+  min-width:0;
+  width:100%;
+  border:1px solid var(--line-strong);
+  background:#fff;
+  border-radius:9px;
+  padding:7px 9px;
+  outline:none;
+}
+.field input:focus,.field select:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(10,92,213,.12)}
+.hint{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.55}
+.toast{
+  position:fixed;
+  right:20px;
+  bottom:20px;
+  z-index:90;
+  max-width:min(520px,calc(100vw - 40px));
+  padding:11px 14px;
+  border-radius:10px;
+  color:#fff;
+  background:#111923;
+  box-shadow:0 12px 34px rgba(0,0,0,.26);
+  opacity:0;
+  transform:translateY(8px);
+  transition:.2s;
+  pointer-events:none;
+}
+.toast.show{opacity:1;transform:none}
+@media(max-width:1180px){
+  body{overflow:auto}
+  .page{height:auto;grid-template-columns:1fr}
+  .view-grid{height:calc(100vh - 210px);min-height:520px}
+}
+@media(max-width:760px){
+  .topbar{height:auto;flex-wrap:wrap}
+  .page{height:auto}
+  .view-grid{grid-template-columns:1fr;height:auto;min-height:0}
+  .feed{height:min(72vw,420px)}
+  .side-panel{overflow:visible}
+}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <img class="logo" src="/logo.png" alt="云小圈">
+  <div class="brand">
+    <div class="sysname">云小圈AI硬件质检系统</div>
+    <div class="title">相机调试</div>
+  </div>
+  <span class="spacer"></span>
+  <span class="pill" id="agent-pill">检测采集代理</span>
+  <a class="navbtn" href="/workbench">质检工作台</a>
+  <a class="navbtn" href="/">首页</a>
+</div>
+
+<main class="page">
+  <section class="preview-panel">
+    <div class="panel-head">
+      <div class="panel-title">实时预览</div>
+      <div class="panel-note" id="preview-note">滚轮缩放，拖动画面，单路可全屏</div>
+    </div>
+    <div class="view-grid">
+      <figure class="feed" id="feed-front">
+        <div class="feed-label"><span class="dot" id="dot-front"></span><span>上相机 · 正面</span><span id="state-front">待连接</span></div>
+        <img id="view-front" alt="上相机实时画面" loading="eager" fetchpriority="high">
+        <div class="tools">
+          <button class="tool-btn" type="button" onclick="zoomStep('front',-0.25)">-</button>
+          <button class="tool-btn" type="button" onclick="zoomStep('front',0.25)">+</button>
+          <span class="zoom-val" id="zoom-front">100%</span>
+          <button class="tool-btn" type="button" onclick="resetZoom('front')">复位</button>
+          <button class="tool-btn" type="button" onclick="fullscreen('front')">全屏</button>
+        </div>
+      </figure>
+      <figure class="feed" id="feed-back">
+        <div class="feed-label"><span class="dot" id="dot-back"></span><span>下相机 · 反面</span><span id="state-back">待连接</span></div>
+        <img id="view-back" alt="下相机实时画面" loading="eager" fetchpriority="high">
+        <div class="tools">
+          <button class="tool-btn" type="button" onclick="zoomStep('back',-0.25)">-</button>
+          <button class="tool-btn" type="button" onclick="zoomStep('back',0.25)">+</button>
+          <span class="zoom-val" id="zoom-back">100%</span>
+          <button class="tool-btn" type="button" onclick="resetZoom('back')">复位</button>
+          <button class="tool-btn" type="button" onclick="fullscreen('back')">全屏</button>
+        </div>
+      </figure>
+    </div>
+  </section>
+
+  <aside class="side-panel">
+    <div class="section">
+      <h2>连接状态</h2>
+      <div class="status-list">
+        <div class="kv"><b>采集代理</b><span id="agent-state">检测中</span></div>
+        <div class="kv"><b>服务端</b><span id="server-state">检测中</span></div>
+        <div class="kv"><b>工位</b><span id="station-state">--</span></div>
+        <div class="kv"><b>设备</b><span id="devices-state">--</span></div>
+      </div>
+      <div class="hint">这页必须在接相机的电脑上打开。画面来自本机 <code>127.0.0.1:8812</code>，服务器只负责提供页面和识别。</div>
+    </div>
+
+    <div class="section">
+      <h2>预览操作</h2>
+      <div class="action-row">
+        <button class="btn primary" type="button" onclick="refreshAll()">刷新画面</button>
+        <button class="btn" type="button" onclick="resetAll()">全部复位</button>
+      </div>
+      <div class="action-row" style="margin-top:8px">
+        <button class="btn" type="button" onclick="fullscreen('front')">上相机全屏</button>
+        <button class="btn" type="button" onclick="fullscreen('back')">下相机全屏</button>
+      </div>
+      <div class="hint">全屏后按 Esc 退出；全屏里仍可滚轮缩放和拖动画面。</div>
+    </div>
+
+    <div class="section">
+      <h2>相机参数</h2>
+      <div class="camera-card">
+        <div class="camera-title">上相机 · 正面</div>
+        <div class="field"><label>曝光</label><input id="exp-front" type="number" min="1" step="100"><span>us</span></div>
+        <div class="field"><label>增益</label><input id="gain-front" type="number" step="0.1"><span>dB</span></div>
+        <div class="field"><label>方向</label><select id="orient-front"><option value="none">不翻转</option><option value="fliph">左右镜像</option><option value="flipv">上下翻转</option><option value="rot180">180度</option></select><span></span></div>
+        <button class="btn primary" style="width:100%;margin-top:10px" type="button" onclick="applyCam('front')">应用上相机参数</button>
+        <div class="hint" id="range-front"></div>
+      </div>
+      <div class="camera-card">
+        <div class="camera-title">下相机 · 反面</div>
+        <div class="field"><label>曝光</label><input id="exp-back" type="number" min="1" step="100"><span>us</span></div>
+        <div class="field"><label>增益</label><input id="gain-back" type="number" step="0.1"><span>dB</span></div>
+        <div class="field"><label>方向</label><select id="orient-back"><option value="none">不翻转</option><option value="fliph">左右镜像</option><option value="flipv">上下翻转</option><option value="rot180">180度</option></select><span></span></div>
+        <button class="btn primary" style="width:100%;margin-top:10px" type="button" onclick="applyCam('back')">应用下相机参数</button>
+        <div class="hint" id="range-back"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>调试提示</h2>
+      <div class="hint">如果画面打不开，先在笔记本浏览器访问 <code>http://127.0.0.1:8812/</code>，确认客户机采集代理正在运行。</div>
+    </div>
+  </aside>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const CLIENT_AGENT = "http://127.0.0.1:8812";
+const PREVIEW_QUALITY = 78;
+const PREVIEW_FPS = 12;
+const streamStarted = {front:false,back:false};
+const viewState = {
+  front: {scale:1,x:0,y:0,dragging:false,sx:0,sy:0,ox:0,oy:0},
+  back: {scale:1,x:0,y:0,dragging:false,sx:0,sy:0,ox:0,oy:0}
+};
+
+function $(id){return document.getElementById(id);}
+function toast(message){
+  const el = $("toast");
+  el.textContent = message;
+  el.classList.add("show");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => el.classList.remove("show"), 2600);
+}
+function previewUrl(side){
+  return CLIENT_AGENT + "/camera/preview?side=" + encodeURIComponent(side) +
+    "&quality=" + PREVIEW_QUALITY +
+    "&max_fps=" + PREVIEW_FPS +
+    "&t=" + Date.now();
+}
+function applyTransform(side){
+  const st = viewState[side];
+  const img = $("view-" + side);
+  img.style.transform = `translate(${st.x}px,${st.y}px) scale(${st.scale})`;
+  $("zoom-" + side).textContent = Math.round(st.scale * 100) + "%";
+}
+function setZoom(side, value){
+  const st = viewState[side];
+  st.scale = Math.max(1, Math.min(8, Number(value) || 1));
+  applyTransform(side);
+}
+function zoomStep(side, delta){
+  setZoom(side, +(viewState[side].scale + delta).toFixed(2));
+}
+function resetZoom(side){
+  const st = viewState[side];
+  st.scale = 1;
+  st.x = 0;
+  st.y = 0;
+  applyTransform(side);
+}
+function resetAll(){
+  resetZoom("front");
+  resetZoom("back");
+}
+function fullscreen(side){
+  const feed = $("feed-" + side);
+  const req = feed.requestFullscreen || feed.webkitRequestFullscreen || feed.msRequestFullscreen;
+  if(req) req.call(feed);
+  else toast("当前浏览器不支持全屏");
+}
+function bindPanZoom(side){
+  const img = $("view-" + side);
+  img.addEventListener("wheel", event => {
+    event.preventDefault();
+    zoomStep(side, event.deltaY < 0 ? 0.2 : -0.2);
+  }, {passive:false});
+  img.addEventListener("dblclick", () => fullscreen(side));
+  img.addEventListener("pointerdown", event => {
+    const st = viewState[side];
+    st.dragging = true;
+    st.sx = event.clientX;
+    st.sy = event.clientY;
+    st.ox = st.x;
+    st.oy = st.y;
+    img.classList.add("dragging");
+    img.setPointerCapture(event.pointerId);
+  });
+  img.addEventListener("pointermove", event => {
+    const st = viewState[side];
+    if(!st.dragging) return;
+    st.x = st.ox + event.clientX - st.sx;
+    st.y = st.oy + event.clientY - st.sy;
+    applyTransform(side);
+  });
+  const end = event => {
+    const st = viewState[side];
+    st.dragging = false;
+    img.classList.remove("dragging");
+    try{img.releasePointerCapture(event.pointerId);}catch(_){}
+  };
+  img.addEventListener("pointerup", end);
+  img.addEventListener("pointercancel", end);
+  img.onerror = () => {
+    streamStarted[side] = false;
+    $("dot-" + side).className = "dot fail";
+    $("state-" + side).textContent = "无画面";
+    clearTimeout(img._retry);
+    img._retry = setTimeout(() => refreshSide(side), 1600);
+  };
+  img.onload = () => {
+    $("dot-" + side).className = "dot ok";
+    $("state-" + side).textContent = "预览中";
+  };
+}
+function refreshSide(side){
+  streamStarted[side] = true;
+  $("dot-" + side).className = "dot";
+  $("state-" + side).textContent = "连接中";
+  $("view-" + side).src = previewUrl(side);
+}
+function ensureStream(side){
+  if(!streamStarted[side]){
+    refreshSide(side);
+  }
+}
+function refreshAll(){
+  refreshSide("front");
+  refreshSide("back");
+  toast("已刷新实时画面");
+}
+function safeText(value, fallback = "--"){
+  if(value == null || value === "") return fallback;
+  return String(value);
+}
+async function loadHealth(){
+  try{
+    const response = await fetch(CLIENT_AGENT + "/health", {cache:"no-store"});
+    const health = await response.json();
+    const camera = health.camera || {};
+    const server = health.server || {};
+    const devices = camera.devices || [];
+    $("agent-pill").textContent = health.ok ? "客户机已连接" : "客户机异常";
+    $("agent-pill").className = "pill " + (health.ok ? "ok" : "fail");
+    $("agent-state").textContent = health.ok ? "正常" : "异常";
+    $("server-state").textContent = server.ok ? "正常" : (server.error || "异常");
+    $("station-state").textContent = safeText(health.station_id);
+    $("devices-state").textContent = devices.length ? devices.map(d => d.sn || d.ip || d.model).filter(Boolean).join(" / ") : (camera.error || "未发现相机");
+    if(devices.length){
+      ensureStream("front");
+      ensureStream("back");
+    }
+  }catch(error){
+    $("agent-pill").textContent = "客户机未连接";
+    $("agent-pill").className = "pill fail";
+    $("agent-state").textContent = "无法访问 127.0.0.1:8812";
+    $("server-state").textContent = "--";
+    $("station-state").textContent = "--";
+    $("devices-state").textContent = "请先运行 client\\run_capture_agent.bat";
+    $("preview-note").textContent = "未连接客户机采集代理";
+  }
+}
+async function loadCameraParams(side){
+  try{
+    const exp = await (await fetch(CLIENT_AGENT + "/camera/exposure?side=" + side, {cache:"no-store"})).json();
+    if(exp.ok){
+      $("exp-" + side).value = Math.round(exp.cur || exp.exposure_us || 0) || "";
+      const min = exp.min != null ? Math.round(exp.min) : "";
+      const max = exp.max != null ? Math.round(exp.max) : "";
+      $("range-" + side).textContent = min && max ? `曝光范围 ${min}-${max} us` : "";
+    }
+  }catch(_){}
+  try{
+    const gain = await (await fetch(CLIENT_AGENT + "/camera/gain?side=" + side, {cache:"no-store"})).json();
+    if(gain.ok){
+      $("gain-" + side).value = gain.cur != null ? gain.cur : "";
+    }
+  }catch(_){}
+}
+async function loadOrient(){
+  try{
+    const data = await (await fetch(CLIENT_AGENT + "/camera/orient", {cache:"no-store"})).json();
+    if(!data.ok) return;
+    const orient = data.orient || {};
+    for(const side of ["front","back"]){
+      if(orient[side]) $("orient-" + side).value = orient[side];
+    }
+  }catch(_){}
+}
+async function setOrient(side, mode){
+  const fd = new FormData();
+  fd.append("side", side);
+  fd.append("mode", mode);
+  const data = await (await fetch(CLIENT_AGENT + "/camera/orient", {method:"POST", body:fd})).json();
+  if(!data.ok) throw new Error(data.error || "方向设置失败");
+}
+async function applyCam(side){
+  const exp = $("exp-" + side).value;
+  const gain = $("gain-" + side).value;
+  const orient = $("orient-" + side).value;
+  try{
+    if(exp !== ""){
+      const fd = new FormData();
+      fd.append("side", side);
+      fd.append("exposure_us", exp);
+      const data = await (await fetch(CLIENT_AGENT + "/camera/exposure", {method:"POST", body:fd})).json();
+      if(!data.ok) throw new Error(data.error || "曝光设置失败");
+    }
+    if(gain !== ""){
+      const fd = new FormData();
+      fd.append("side", side);
+      fd.append("gain_db", gain);
+      const data = await (await fetch(CLIENT_AGENT + "/camera/gain", {method:"POST", body:fd})).json();
+      if(!data.ok) throw new Error(data.error || "增益设置失败");
+    }
+    await setOrient(side, orient);
+    refreshSide(side);
+    toast((side === "front" ? "上相机" : "下相机") + "参数已应用");
+  }catch(error){
+    toast("设置失败：" + (error.message || error));
+  }
+}
+
+bindPanZoom("front");
+bindPanZoom("back");
+loadHealth();
+loadCameraParams("front");
+loadCameraParams("back");
+loadOrient();
+$("orient-front").onchange = event => setOrient("front", event.target.value).then(() => refreshSide("front")).catch(error => toast(error.message || error));
+$("orient-back").onchange = event => setOrient("back", event.target.value).then(() => refreshSide("back")).catch(error => toast(error.message || error));
+setInterval(loadHealth, 5000);
+</script>
+</body>
+</html>

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>实时质检监控 · 云小圈AI硬件质检系统</title>
+<title>质检工作台 · 云小圈AI硬件质检系统</title>
 <link rel="icon" type="image/png" href="/favicon.png" />
 <script src="/sync-alert.js" defer></script>
 <style>
@@ -40,7 +40,8 @@
       linear-gradient(135deg,#eef1fb 0%,#e8eefc 40%,#f3ecfb 100%);
     background-attachment:fixed;
     min-height:100vh;
-    overflow:hidden;
+    overflow-x:hidden;
+    overflow-y:auto;
   }
   /* 标注图区块在首屏之下。整页 overflow:hidden 时它出现了也滚不到，
      所以有标注图时放开纵向滚动。 */
@@ -85,14 +86,14 @@
     transition:.15s;
   }
   .navbtn:hover{border-color:var(--blue);background:var(--blue);color:#fff}
-  .wrap{width:100vw;max-width:none;margin:0;padding:10px 14px 12px;height:calc(100vh - 69px)}
+  .wrap{width:100%;max-width:none;margin:0;padding:10px 14px 18px;min-height:calc(100vh - 69px)}
   .hero{
     display:grid;
     grid-template-columns:1fr;
-    grid-template-rows:minmax(0,1fr) 260px;
+    grid-template-rows:minmax(500px,calc(100vh - 470px)) auto;
     gap:10px;
     align-items:stretch;
-    height:100%;
+    min-height:calc(100vh - 97px);
     min-height:0;
   }
   @media(max-width:1050px){.hero{grid-template-columns:1fr}}
@@ -244,27 +245,29 @@
   .btn.ghost:hover:not(:disabled){background:var(--soft)}
   .result-card{
     display:block;
+    overflow:visible;
   }
   .result-card .panel-body{
     display:grid;
-    grid-template-columns:280px minmax(330px,.78fr) minmax(540px,1.22fr);
-    gap:10px;
-    align-items:stretch;
+    grid-template-columns:250px 220px minmax(620px,1fr);
+    gap:12px;
+    align-items:start;
+    padding:12px;
   }
   .verdict{
     display:grid;
-    grid-template-columns:112px 1fr;
-    gap:10px;
+    grid-template-columns:104px 1fr;
+    gap:8px;
     align-items:stretch;
   }
   @media(max-width:560px){.verdict{grid-template-columns:1fr}}
   .verdict-main{
     border-radius:14px;
-    padding:18px;
+    padding:14px;
     display:flex;
     flex-direction:column;
     justify-content:center;
-    min-height:104px;
+    min-height:122px;
     border:1px solid var(--line);
     background:#f7f9fc;
   }
@@ -279,25 +282,26 @@
   .verdict-meta{
     display:grid;
     grid-template-columns:repeat(2,minmax(0,1fr));
-    gap:10px;
+    gap:8px;
   }
   .metric{
     border:1px solid var(--line);
     background:#fff;
     border-radius:14px;
-    padding:10px;
-    min-height:52px;
+    padding:9px;
+    min-height:57px;
   }
   .metric .n{font-size:25px;font-weight:1000;line-height:1}
   .metric .t{font-size:12px;color:var(--muted);margin-top:6px;font-weight:800}
   .metric.pass .n{color:var(--green)}
   .metric.fail .n{color:var(--red)}
   .metric.total .n{color:var(--blue)}
+  .metric.remaining .n{color:var(--amber)}
   .metric.rate .n{color:var(--steel)}
   .slots{
     display:grid;
-    grid-template-columns:repeat(4,minmax(0,1fr));
-    gap:10px;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:8px;
     margin-top:0;
   }
   @media(max-width:760px){.slots{grid-template-columns:repeat(2,minmax(0,1fr))}}
@@ -305,8 +309,8 @@
     border:1px solid var(--line);
     border-radius:14px;
     background:#fff;
-    min-height:62px;
-    padding:10px;
+    min-height:142px;
+    padding:10px 12px;
   }
   .slot.pass{border-color:#bfe5d0;background:var(--green-bg)}
   .slot.fail{border-color:#f0c2bd;background:var(--red-bg)}
@@ -317,22 +321,41 @@
   .slot.pass .slot-status{color:var(--green)}
   .slot.fail .slot-status{color:var(--red)}
   .slot.unknown .slot-status{color:var(--amber)}
-  .slot-detail{font-size:12px;color:var(--muted);margin-top:5px;word-break:break-word;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .slot-label{font-size:11px;color:#39465a;margin-top:4px;line-height:1.35;word-break:break-all}
+  .slot-detail{font-size:12px;color:var(--muted);margin-top:5px;word-break:break-word;white-space:normal;overflow:visible}
+  .slot-label{font-size:11px;color:#39465a;margin-top:5px;line-height:1.45;overflow-wrap:anywhere;word-break:break-word}
   .slot-label b{color:var(--ink)}
+  .slot-dates{
+    margin-top:7px;
+    padding-top:7px;
+    border-top:1px solid rgba(20,40,80,.10);
+    color:#314154;
+    font-size:11px;
+    line-height:1.5;
+  }
+  .slot-date-line{
+    display:grid;
+    grid-template-columns:56px minmax(0,1fr);
+    gap:6px;
+    align-items:start;
+    margin-top:2px;
+  }
+  .slot-date-line b{color:var(--ink);font-weight:900}
+  .chip-date-list{display:flex;flex-wrap:wrap;gap:2px 8px}
+  .chip-date{white-space:nowrap}
   .tray{
     margin-top:0;
     border:1px solid rgba(10,92,213,.18);
     background:linear-gradient(135deg,rgba(10,92,213,.06),rgba(252,134,21,.05));
     border-radius:14px;
-    padding:10px;
+    padding:9px;
   }
   .tray-head{
     display:flex;
     align-items:center;
-    justify-content:space-between;
+    align-items:flex-start;
+    flex-direction:column;
     gap:10px;
-    margin-bottom:8px;
+    margin-bottom:6px;
     color:var(--blue-deep);
     font-size:12px;
     font-weight:900;
@@ -340,16 +363,16 @@
   .tray-note{color:var(--muted);font-weight:700}
   .tray-row{
     display:grid;
-    grid-template-columns:repeat(4,minmax(0,1fr));
+    grid-template-columns:1fr;
     gap:8px;
   }
   .tray-cell{
-    min-height:44px;
+    min-height:39px;
     display:flex;
-    flex-direction:column;
+    flex-direction:row;
     justify-content:center;
     align-items:center;
-    gap:3px;
+    gap:8px;
     border:1px solid var(--line);
     border-radius:12px;
     background:rgba(255,255,255,.82);
@@ -359,13 +382,24 @@
   .tray-cell.pass{background:var(--green-bg);border-color:#bfe5d0;color:var(--green)}
   .tray-cell.fail{background:var(--red-bg);border-color:#f0c2bd;color:var(--red)}
   .tray-cell.unknown{background:var(--amber-bg);border-color:#ecd49c;color:var(--amber)}
-  .tray-cell .pos{font-size:17px;line-height:1}
-  .tray-cell .res{font-size:12px}
+  .tray-cell .pos{min-width:18px;text-align:right;font-size:17px;line-height:1}
+  .tray-cell .res{min-width:32px;text-align:left;font-size:12px;line-height:1}
   .run-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin-top:8px}
   .run-kv{border-top:1px solid var(--line);padding-top:4px;font-size:11px;color:var(--muted)}
   .run-kv strong{display:block;color:var(--ink);font-size:13px}
   .run-stages{grid-column:1/-1;font-size:10px;color:var(--muted);line-height:1.4;word-break:break-word}
-  @media(max-width:760px){.tray-row{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media(max-width:760px){.tray-row{grid-template-columns:1fr}}
+  @media(max-width:1450px){
+    .result-card .panel-body{grid-template-columns:240px 200px minmax(480px,1fr)}
+  }
+  @media(max-width:1100px){
+    .result-card .panel-body{grid-template-columns:1fr 1fr}
+    .slots{grid-column:1/-1}
+  }
+  @media(max-width:700px){
+    .result-card .panel-body{grid-template-columns:1fr}
+    .slots{grid-column:auto;grid-template-columns:1fr}
+  }
   .history{
     display:contents;
   }
@@ -503,13 +537,14 @@
   <img class="logo" src="/logo.png" alt="云小圈" />
   <div class="brand">
     <div class="sysname">云小圈AI硬件质检系统</div>
-    <div class="title">实时质检监控</div>
+    <div class="title">质检工作台</div>
   </div>
   <span class="spacer"></span>
   <span class="pill" id="cam-status">检测相机</span>
   <span class="pill ok" id="auto-status">手动规则模式</span>
   <button class="navbtn" id="settings-toggle" type="button">检测设置</button>
-  <a class="navbtn" href="/workbench">返回工作台</a>
+  <a class="navbtn" href="/camera">相机调试</a>
+  <a class="navbtn" href="/orders">采购订单</a>
   <a class="navbtn" href="/">首页</a>
 </div>
 <div class="product-profile" id="product-profile">正在读取当前采购订单和识别模板…</div>
@@ -525,7 +560,7 @@
         <div class="viewport-grid" id="viewport-grid">
           <figure class="feed" id="feed-front">
             <figcaption><span>上相机 · 正面</span><span id="front-state">待连接</span></figcaption>
-            <img id="view-front" alt="上相机实时画面">
+            <img id="view-front" alt="上相机实时画面" loading="eager" fetchpriority="high">
             <div class="zoom-tools">
               <button class="zoom-btn" type="button" onclick="zoomStep('front',-0.25)">-</button>
               <button class="zoom-btn" type="button" onclick="zoomStep('front',0.25)">+</button>
@@ -536,7 +571,7 @@
           </figure>
           <figure class="feed" id="feed-back">
             <figcaption><span>下相机 · 反面</span><span id="back-state">待连接</span></figcaption>
-            <img id="view-back" alt="下相机实时画面">
+            <img id="view-back" alt="下相机实时画面" loading="eager" fetchpriority="high">
             <div class="zoom-tools">
               <button class="zoom-btn" type="button" onclick="zoomStep('back',-0.25)">-</button>
               <button class="zoom-btn" type="button" onclick="zoomStep('back',0.25)">+</button>
@@ -565,16 +600,18 @@
             <div class="verdict-word" id="verdict-word">待检</div>
           </div>
           <div class="verdict-meta">
-            <div class="metric total"><div class="n" id="stat-total">0</div><div class="t">累计根数</div></div>
+            <div class="metric total"><div class="n" id="stat-expected">--</div><div class="t">当前订单应检</div></div>
+            <div class="metric total"><div class="n" id="stat-total">0</div><div class="t">已检</div></div>
             <div class="metric pass"><div class="n" id="stat-pass">0</div><div class="t">合格</div></div>
             <div class="metric fail"><div class="n" id="stat-fail">0</div><div class="t">不合格</div></div>
-            <div class="metric rate"><div class="n" id="stat-rate">--</div><div class="t">合格率</div></div>
+            <div class="metric remaining"><div class="n" id="stat-remain">--</div><div class="t">待检</div></div>
+            <div class="metric rate"><div class="n" id="stat-rate">--</div><div class="t">订单合格率</div></div>
           </div>
         </div>
         <div class="tray">
           <div class="tray-head">
             <span>托盘槽位示意</span>
-            <span class="tray-note">操作员面对托盘，从左到右为 1-4 槽</span>
+            <span class="tray-note">面对画面，从上到下为 1-4 槽</span>
           </div>
           <div class="tray-row" id="tray-map">
             <div class="tray-cell unknown"><div class="pos">1</div><div class="res">待检</div></div>
@@ -634,13 +671,6 @@
               <option value="geo" selected>整合识别（逐槽读取颗粒、PCB、可见主控）</option>
               <option value="rules">旧规则识别（整图找日期，不拆槽）</option>
               <option value="template">模板识别（兼容入口，实际使用整合识别）</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="single-flow">单相机流程</label>
-            <select id="single-flow">
-              <option value="one" selected>只拍一面，直接识别</option>
-              <option value="two">拍正面 → 翻面 → 拍反面</option>
             </select>
           </div>
           <div class="field">
@@ -704,17 +734,20 @@ const state = {
   operator: "",
   history: [],
   seenRecordIds: new Set(),
+  captureInProgress: false,
+  blockHistoricalReplay: false,
+  currentInspectionId: "",
   recordsTimer: null,
-  stats: { total: 0, pass: 0, fail: 0, unknown: 0 },
+  stats: { expected: null, total: 0, pass: 0, fail: 0, unknown: 0, remain: null },
   cameraMode: "dual",
-  cameraBackend: "hik",
+  cameraBackend: "client",
   activeRoles: ["front", "back"],
-  singleCapture: null,
   batchId: "",
   batchNo: "",
   templateReady: false,
   templateId: ""
 };
+const CLIENT_AGENT = "http://127.0.0.1:8812";
 const previewView = {
   front: { scale: 1, x: 0, y: 0, dragging: false, sx: 0, sy: 0, ox: 0, oy: 0 },
   back: { scale: 1, x: 0, y: 0, dragging: false, sx: 0, sy: 0, ox: 0, oy: 0 }
@@ -747,18 +780,39 @@ function verdictClass(v){
 function timeText(){
   return new Date().toLocaleTimeString("zh-CN", { hour12:false, hour:"2-digit", minute:"2-digit", second:"2-digit" });
 }
-// 单面流程（只拍一面直接识别）——默认。选"two"才走原来的翻面两步流程。
-function singleOneShot(){
-  const el = $("single-flow");
-  return !el || el.value !== "two";
-}
 function setBusy(busy, label){
   $("manual-go").disabled = busy || !state.templateReady;
   if(busy){ $("manual-go").textContent = label || "检测中"; return; }
-  if(state.singleCapture){ $("manual-go").textContent = "已拍正面，翻面后继续"; return; }
-  $("manual-go").textContent = state.cameraMode === "single"
-    ? (singleOneShot() ? "拍照并检测（单面）" : "拍摄正面")
-    : "拍照并检测";
+  $("manual-go").textContent = "拍照并检测";
+}
+
+function clearInspectionDisplay(){
+  state.history = [];
+  state.blockHistoricalReplay = true;
+  state.currentInspectionId = "";
+  $("verdict-main").className = "verdict-main unknown";
+  $("verdict-word").textContent = "检测中";
+  $("last-time").textContent = timeText();
+  renderTrayMap([]);
+  $("slots").innerHTML = '<div class="empty" style="grid-column:1/-1">正在拍照并识别本次托盘，上一轮结果已清空</div>';
+  $("history-body").innerHTML = '<tr><td colspan="7" class="muted">正在等待本次检测结果</td></tr>';
+  $("run-summary").innerHTML = `
+    <div class="run-kv"><strong>--</strong>单次检测耗时</div>
+    <div class="run-kv"><strong>本地 OCR</strong>无大模型调用</div>
+    <div class="run-stages">正在拍照并识别...</div>`;
+  const sect = document.querySelector(".annotated-section");
+  if(sect) sect.classList.remove("has-annotated");
+  $("image-note").textContent = "等待本次标注图";
+  $("annotated-box").dataset.imgKey = "";
+  $("annotated-box").innerHTML = '<div class="empty">等待本次检测返回标注图</div>';
+}
+
+function renderCaptureFailed(message){
+  $("verdict-main").className = "verdict-main fail";
+  $("verdict-word").textContent = "检测失败";
+  $("last-time").textContent = timeText();
+  $("slots").innerHTML = `<div class="empty" style="grid-column:1/-1">${esc(message || "本次检测失败，请重试")}</div>`;
+  $("history-body").innerHTML = '<tr><td colspan="7" class="muted">本次检测未产生记录</td></tr>';
 }
 
 function setCameraMode(mode, activeRoles){
@@ -772,9 +826,7 @@ function setCameraMode(mode, activeRoles){
   setBusy(false);
 }
 function previewUrl(side){
-  return state.cameraBackend === "uvc"
-    ? "/api/camera/preview/" + side + "?t=" + Date.now()
-    : "/api/hik/preview?side=" + side + "&t=" + Date.now();
+  return CLIENT_AGENT + "/camera/preview?side=" + side + "&t=" + Date.now();
 }
 function applyPreviewTransform(side){
   const st = previewView[side];
@@ -895,6 +947,7 @@ async function loadProductProfile(){
       box.innerHTML = `<strong>${esc(state.batchNo || ('订单 #'+state.batchId))} 暂不能检测</strong><span class="meta">${esc(d.error || '模板未标定')}</span>${requirements?'<ul>'+requirements+'</ul>':''}`;
       $("manual-go").disabled = true;
     }
+    refreshFromRecords(true);
   }catch(e){
     box.className = "product-profile blocked";
     box.innerHTML = '<strong>订单模板读取失败</strong><span class="meta">'+esc(e.message||e)+'</span>';
@@ -905,33 +958,24 @@ async function loadProductProfile(){
 async function camStatus(){
   const el = $("cam-status");
   try{
-    const d = await (await fetch("/api/hik/status")).json();
+    const health = await (await fetch(CLIENT_AGENT + "/health", {cache:"no-store"})).json();
+    const d = health.camera || {};
     let devs = d.devices || [];
     if(!d.sdk || !devs.length){
-      const uvc = await (await fetch("/api/camera/status")).json();
-      const roles = ["front","back"].filter(side => uvc[side]);
-      if(roles.length){
-        state.cameraBackend = "uvc";
-        setCameraMode(roles.length === 1 ? "single" : "dual", roles);
-        el.textContent = "USB 相机已连接";
-        el.className = "pill ok";
-        $("cam-devs").textContent = roles.length === 1 ? "单 USB 相机" : "双 USB 相机";
-        if(!state.started) dualPlay();
-        return;
-      }
-      el.textContent = d.error ? ("相机不可用 · " + d.error) : "未发现相机";
+      el.textContent = d.error ? ("客户机相机不可用 · " + d.error) : "客户机未发现相机";
       el.className = "pill fail";
       return;
     }
-    state.cameraBackend = "hik";
+    state.cameraBackend = "client";
     setCameraMode(d.camera_mode || ((d.active_roles || []).length === 1 ? "single" : "dual"), d.active_roles);
-    el.textContent = "已连接 " + devs.length + " 台";
+    el.textContent = "客户机已连接 " + devs.length + " 台";
     el.className = "pill ok";
-    $("cam-devs").textContent = devs.map(c => c.sn || c.ip || c.model).filter(Boolean).join(" / ") || "相机在线";
+    $("cam-devs").textContent = (health.station_id ? health.station_id + " · " : "") + (devs.map(c => c.sn || c.ip || c.model).filter(Boolean).join(" / ") || "相机在线");
     if(!state.started) dualPlay();
   }catch(e){
-    el.textContent = "状态获取失败";
+    el.textContent = "客户机采集代理未启动";
     el.className = "pill fail";
+    $("cam-devs").textContent = "请在客户机运行 client\\run_capture_agent.bat";
   }
 }
 
@@ -955,7 +999,7 @@ function bindReconnect(side){
     }, wait);
   };
 }
-function dualPlay(){
+async function dualPlay(){
   state.started = true;
   bindPreviewTools("front");
   if(state.activeRoles.includes("back")) bindPreviewTools("back");
@@ -967,17 +1011,15 @@ function dualPlay(){
   if(state.activeRoles.includes("back")) $("view-back").src = previewUrl("back");
   applyPreviewTransform("front");
   if(state.activeRoles.includes("back")) applyPreviewTransform("back");
-  if(state.cameraBackend === "hik"){
-    loadCam("front");
-    if(state.activeRoles.includes("back")) loadCam("back");
-    loadOrient();
-  }
+  loadCam("front");
+  if(state.activeRoles.includes("back")) loadCam("back");
+  loadOrient();
 }
 
 async function loadCam(side){
   try{
-    const e = await (await fetch("/api/hik/exposure?side=" + side)).json();
-    const g = await (await fetch("/api/hik/gain?side=" + side)).json();
+    const e = await (await fetch(CLIENT_AGENT + "/camera/exposure?side=" + side)).json();
+    const g = await (await fetch(CLIENT_AGENT + "/camera/gain?side=" + side)).json();
     if(e.ok) $("exp-" + side).value = Math.round(e.cur);
     if(g.ok) $("gain-" + side).value = g.cur;
     const range = [];
@@ -994,14 +1036,14 @@ async function applyCam(side){
       const fd = new FormData();
       fd.append("exposure_us", exp);
       fd.append("side", side);
-      const d = await (await fetch("/api/hik/exposure", { method:"POST", body:fd })).json();
+      const d = await (await fetch(CLIENT_AGENT + "/camera/exposure", { method:"POST", body:fd })).json();
       if(!d.ok) throw new Error(d.error || "曝光设置失败");
     }
     if(gain !== ""){
       const fd = new FormData();
       fd.append("gain_db", gain);
       fd.append("side", side);
-      const d = await (await fetch("/api/hik/gain", { method:"POST", body:fd })).json();
+      const d = await (await fetch(CLIENT_AGENT + "/camera/gain", { method:"POST", body:fd })).json();
       if(!d.ok) throw new Error(d.error || "增益设置失败");
     }
     await setOrient(side, $("orient-" + side).value, false);
@@ -1013,7 +1055,7 @@ async function applyCam(side){
 }
 async function loadOrient(){
   try{
-    const d = await (await fetch("/api/hik/orient")).json();
+    const d = await (await fetch(CLIENT_AGENT + "/camera/orient")).json();
     if(d.ok){
       for(const side of ["front","back"]){
         if(d.orient && d.orient[side]) $("orient-" + side).value = d.orient[side];
@@ -1025,9 +1067,9 @@ async function setOrient(side, mode, notify = true){
   const fd = new FormData();
   fd.append("side", side);
   fd.append("mode", mode);
-  const d = await (await fetch("/api/hik/orient", { method:"POST", body:fd })).json();
+  const d = await (await fetch(CLIENT_AGENT + "/camera/orient", { method:"POST", body:fd })).json();
   if(!d.ok) throw new Error(d.error || "方向设置失败");
-  $("view-" + side).src = "/api/hik/preview?side=" + side + "&t=" + Date.now();
+  $("view-" + side).src = previewUrl(side);
   if(notify) toast((side === "front" ? "上相机" : "下相机") + "方向已更新");
 }
 
@@ -1048,86 +1090,33 @@ function buildForm(){
 
 async function manualCapture(){
   if(!state.templateReady){toast("当前订单的识别模板尚未准备好");return;}
-  if(state.cameraMode === "single"){
-    return manualSingleCapture();
-  }
+  if(state.cameraMode === "single"){toast("远程质检当前要求客户机连接正反两台相机");return;}
+  state.captureInProgress = true;
+  clearInspectionDisplay();
   setBusy(true, "拍摄识别中");
   try{
-    const d = await (await fetch("/api/hik/capture_and_save", { method:"POST", body:buildForm() })).json();
+    const response = await fetch(CLIENT_AGENT + "/capture-and-recognize", { method:"POST", body:buildForm() });
+    const d = await response.json();
+    if(!response.ok) throw new Error(d.detail || "客户机拍照或服务器识别失败");
     if(d.ok === false && d.error) throw new Error(d.error);
+    state.captureInProgress = false;
     consumeResult(d);
     toast("检测完成");
   }catch(e){
-    toast("检测失败：" + (e.message || e));
-  }finally{
-    setBusy(false);
-  }
-}
-
-// 单面：拍一张就走完整识别流程，不等翻面。
-async function manualOneSideCapture(){
-  setBusy(true, "拍摄识别中");
-  try{
-    const fd = buildForm();
-    fd.append("backend", state.cameraBackend);
-    const d = await (await fetch("/api/hik/single/capture_and_save", { method:"POST", body:fd })).json();
-    if(d.ok === false && d.error) throw new Error(d.error);
-    consumeResult(d);
-    toast(d.single_side_warn || "单面检测完成");
-  }catch(e){
-    toast("检测失败：" + (e.message || e));
-  }finally{
-    setBusy(false);
-  }
-}
-
-async function manualSingleCapture(){
-  if(singleOneShot()){
-    state.singleCapture = null;                 // 切回单面流程时清掉半途的两步状态
-    return manualOneSideCapture();
-  }
-  const firstStep = !state.singleCapture;
-  setBusy(true, firstStep ? "拍摄正面中" : "拍摄反面并识别中");
-  try{
-    if(firstStep){
-      const fd = new FormData();
-      fd.append("backend", state.cameraBackend);
-      const d = await (await fetch("/api/hik/single/capture_front", { method:"POST", body:fd })).json();
-      if(!d.ok) throw new Error(d.error || "正面拍摄失败");
-      state.singleCapture = { uid:d.uid, captureSec:d.capture_sec || 0 };
-      toast("正面已拍摄，请将整盘翻到反面后再次点击");
-      return;
-    }
-    const fd = buildForm();
-    fd.append("uid", state.singleCapture.uid);
-    fd.append("front_capture_sec", state.singleCapture.captureSec || 0);
-    fd.append("backend", state.cameraBackend);
-    const d = await (await fetch("/api/hik/single/capture_back_and_save", { method:"POST", body:fd })).json();
-    if(!d.ok && d.error) throw new Error(d.error);
-    state.singleCapture = null;
-    consumeResult(d);
-    toast("正反面检测完成");
-  }catch(e){
-    toast((firstStep ? "正面拍摄失败：" : "反面检测失败：") + (e.message || e));
+    state.captureInProgress = false;
+    const msg = "检测失败：" + (e.message || e);
+    renderCaptureFailed(msg);
+    toast(msg);
   }finally{
     setBusy(false);
   }
 }
 
 async function autoStart(){
-  state.autoWant = true;
-  const fd = buildForm();
-  try{
-    const d = await (await fetch("/api/hik/auto/start", { method:"POST", body:fd })).json();
-    if(!d.ok) throw new Error(d.error || "启动失败");
-    $("auto-status").textContent = "实时监控中";
-    $("auto-status").className = "pill ok";
-    openSSE();
-    toast("实时监控已开始");
-  }catch(e){
-    state.autoWant = false;
-    toast("启动失败：" + (e.message || e));
-  }
+  state.autoWant = false;
+  $("auto-status").textContent = "客户机手动拍照模式";
+  $("auto-status").className = "pill";
+  toast("客户机模式暂不启用自动静止触发，请使用拍照并检测");
 }
 async function autoStop(){
   state.autoWant = false;
@@ -1135,8 +1124,7 @@ async function autoStop(){
     state.autoES.close();
     state.autoES = null;
   }
-  try{ await fetch("/api/hik/auto/stop", { method:"POST" }); }catch(_){}
-  $("auto-status").textContent = "手动模式";
+  $("auto-status").textContent = "客户机手动拍照模式";
   $("auto-status").className = "pill";
 }
 function openSSE(){
@@ -1170,6 +1158,11 @@ function resultItems(d){
       spec: s.spec || "",
       mfg: s.mfg || "",
       labelData: s.label_data || {},
+      controllerDate: s.controller_date || "",
+      pcbDate: s.pcb_date || "",
+      storageChips: s.storage_chips || [],
+      controllerStatus: s.controller_status || "",
+      pcbStatus: s.pcb_status || "",
       timing: d.timing || s.timing || {},
       tokenUsage: d.token_usage || s.token_usage || {},
       inspectionId: s.inspection_id || d.inspection_id || ""
@@ -1187,6 +1180,11 @@ function resultItems(d){
     spec: d && d.spec || "",
     mfg: d && d.mfg || "",
     labelData: d && d.label_data || {},
+    controllerDate: d && d.controller_date || "",
+    pcbDate: d && d.pcb_date || "",
+    storageChips: d && d.storage_chips || [],
+    controllerStatus: d && d.controller_status || "",
+    pcbStatus: d && d.pcb_status || "",
     timing: d && d.timing || {},
     tokenUsage: d && d.token_usage || {},
     inspectionId: d && d.inspection_id || ""
@@ -1197,16 +1195,12 @@ function consumeResult(d){
     toast("重复检测，已跳过入库");
   }
   const items = resultItems(d);
+  state.currentInspectionId = d.inspection_id || (items.find(x => x.inspectionId) || {}).inspectionId || "";
+  state.blockHistoricalReplay = true;
   renderCurrent(items, displayVerdict(items, d.verdict), timeText(), d.timing || {}, d.token_usage || {});
-  // 只拍一面时必须显式提示：另一面根本没看过，别把"没检查"当"合格"。
-  // 放在 renderCurrent 之后 —— 它会重写 #last-time。
-  if(d.single_side){
-    $("last-time").innerHTML = esc(timeText())
-      + ' · <span style="color:var(--amber);font-weight:900" title="'
-      + esc(d.single_side_warn || "") + '">⚠ 仅单面，另一面未检查</span>';
-  }
   addHistory(items);
   renderAnnotated(d);
+  refreshFromRecords(false);
 }
 function displayVerdict(items, fallback){
   if(items.length > 1) return "mixed";
@@ -1220,6 +1214,10 @@ function renderCurrent(items, display, when, timing = {}, tokenUsage = {}){
   renderRunSummary(timing, tokenUsage);
 }
 function sec(v){ return Number.isFinite(Number(v)) ? Number(v).toFixed(3) + "s" : "--"; }
+function fmtQty(v){
+  const x = Number(v || 0);
+  return Number.isInteger(x) ? String(x) : x.toFixed(2);
+}
 function renderRunSummary(timing, tokenUsage){
   const tm = timing || {}, tk = tokenUsage || {};
   const labels = {capture:"拍照",file_prepare:"图片准备",slot_detect_crop:"槽位/裁图",rule_ocr:"规则OCR",
@@ -1230,6 +1228,70 @@ function renderRunSummary(timing, tokenUsage){
     <div class="run-kv"><strong>${sec(tm.total)}</strong>单次检测耗时（墙钟）</div>
     <div class="run-kv"><strong>本地 OCR</strong>无大模型调用</div>
     <div class="run-stages">${esc(stages || "等待手动拍照检测")}</div>`;
+}
+function dateStatusText(status){
+  if(status === "covered") return "被遮挡";
+  if(status === "raw" || status === "unknown") return "未读出";
+  return "—";
+}
+function formatWeekDate(value, status){
+  const s = String(value || "").trim();
+  if(s){
+    const m = s.match(/^(\d{4})(\d{2})$/);
+    if(m) return m[1].slice(2) + "年" + Number(m[2]) + "周";
+    const yyww = s.match(/^(\d{2})(\d{2})$/);
+    if(yyww) return yyww[1] + "年" + Number(yyww[2]) + "周";
+    return s;
+  }
+  return dateStatusText(status);
+}
+function dateStatusFromLabel(item, key){
+  const lb = item.labelData || {};
+  const status = lb.date_status || lb.dateStatus || {};
+  return item[key + "Status"] || status[key] || "";
+}
+function chipPositionText(chip, index){
+  const sideText = {front:"正", back:"反"}[chip.side] || "";
+  const idx = chip.idx == null ? (index + 1) : chip.idx;
+  return (sideText ? sideText : "芯片") + idx;
+}
+function groupedChipDatesHtml(chips){
+  if(!chips.length) return '<span class="muted">—</span>';
+  const groups = [];
+  const byDate = new Map();
+  chips.forEach((chip, idx) => {
+    chip = chip || {};
+    const date = formatWeekDate(chip.yyyyww || chip.date || "", chip.status || "");
+    if(!byDate.has(date)){
+      const group = { date, count:0, positions:[] };
+      byDate.set(date, group);
+      groups.push(group);
+    }
+    const group = byDate.get(date);
+    group.count += 1;
+    group.positions.push(chipPositionText(chip, idx));
+  });
+  if(groups.length === 1){
+    return `<span class="chip-date">${esc(groups[0].date)}</span>`;
+  }
+  return groups.map(group => {
+    const suffix = group.count === 1 ? `（${group.positions[0]}）` : `（${group.count}颗）`;
+    return `<span class="chip-date">${esc(group.date + suffix)}</span>`;
+  }).join("");
+}
+function slotDatesHtml(item){
+  const chips = Array.isArray(item.storageChips) ? item.storageChips : [];
+  const slotNo = Number(item.slot);
+  const scopedChips = chips.filter(chip => {
+    const chipSlot = chip && chip.slot != null ? Number(chip.slot) : null;
+    return !Number.isFinite(slotNo) || chipSlot == null || chipSlot === slotNo;
+  });
+  const chipHtml = groupedChipDatesHtml(scopedChips);
+  return `<div class="slot-dates">
+    <div class="slot-date-line"><b>PCB</b><span>${esc(formatWeekDate(item.pcbDate, dateStatusFromLabel(item, "pcb")))}</span></div>
+    <div class="slot-date-line"><b>主控</b><span>${esc(formatWeekDate(item.controllerDate, dateStatusFromLabel(item, "controller")))}</span></div>
+    <div class="slot-date-line"><b>存储芯片</b><span class="chip-date-list">${chipHtml}</span></div>
+  </div>`;
 }
 function renderSlots(items){
   renderTrayMap(items);
@@ -1245,6 +1307,7 @@ function renderSlots(items){
       </div>
       <div class="slot-detail">${esc(detail || "无异常")}</div>
       <div class="slot-label"><b>型号</b> ${esc(lb.model || item.model || "—")}<br><b>规格</b> ${esc(lb.spec || item.spec || "—")}<br><b>批次</b> ${esc(lb.mfg || item.mfg || "—")}<br><b>码值</b> <span title="${esc(raw)}">${esc(raw || "未识别")}</span></div>
+      ${slotDatesHtml(item)}
     </div>`;
   }).join("");
 }
@@ -1265,22 +1328,38 @@ function addHistory(items){
     const rid = item.recordId ? String(item.recordId) : "";
     if(rid && state.seenRecordIds.has(rid)) continue;
     if(rid) state.seenRecordIds.add(rid);
-    state.stats.total += 1;
-    if(item.verdict === "pass") state.stats.pass += 1;
-    else if(item.verdict === "fail") state.stats.fail += 1;
-    else state.stats.unknown += 1;
     state.history.unshift({ ...item, time: item.time || timeText() });
   }
   state.history = state.history.slice(0, 80);
-  renderStats();
   renderHistory();
 }
-function renderStats(){
-  $("stat-total").textContent = state.stats.total;
-  $("stat-pass").textContent = state.stats.pass;
-  $("stat-fail").textContent = state.stats.fail;
-  const decided = state.stats.pass + state.stats.fail;
-  $("stat-rate").textContent = decided ? Math.round(state.stats.pass / decided * 100) + "%" : "--";
+function emptyOrderStats(){
+  return { expected:null, total:0, pass:0, fail:0, unknown:0, remain:null };
+}
+function buildOrderStats(order, records){
+  const rows = Array.isArray(records) ? records : [];
+  const total = rows.length;
+  const pass = rows.filter(r => r.verdict === "pass").length;
+  const fail = rows.filter(r => r.verdict === "fail").length;
+  const expected = Number((order || {}).qty_expected || (order || {}).kd_in_stock_qty || 0) || null;
+  return {
+    expected,
+    total,
+    pass,
+    fail,
+    unknown: Math.max(0, total - pass - fail),
+    remain: expected ? Math.max(0, expected - total) : null,
+  };
+}
+function renderStats(stats){
+  state.stats = stats || state.stats || emptyOrderStats();
+  $("stat-expected").textContent = state.stats.expected == null ? "--" : fmtQty(state.stats.expected);
+  $("stat-total").textContent = fmtQty(state.stats.total || 0);
+  $("stat-pass").textContent = fmtQty(state.stats.pass || 0);
+  $("stat-fail").textContent = fmtQty(state.stats.fail || 0);
+  $("stat-remain").textContent = state.stats.remain == null ? "--" : fmtQty(state.stats.remain);
+  const decided = (state.stats.pass || 0) + (state.stats.fail || 0);
+  $("stat-rate").textContent = decided ? Math.round((state.stats.pass || 0) / decided * 100) + "%" : "--";
 }
 function renderHistory(){
   if(!state.history.length){
@@ -1339,6 +1418,11 @@ function recordToItem(r){
     spec: r.spec || "",
     mfg: r.mfg || "",
     labelData: r.label_data || {},
+    controllerDate: r.controller_date || "",
+    pcbDate: r.pcb_date || "",
+    storageChips: r.storage_chips || [],
+    controllerStatus: r.controller_status || "",
+    pcbStatus: r.pcb_status || "",
     timing: r.timing || {},
     tokenUsage: r.token_usage || {},
     inspectionId: r.inspection_id || ""
@@ -1377,17 +1461,45 @@ function renderAnnotatedFromRecords(records){
 function rebuildHistoryFromRecords(records){
   state.history = [];
   state.seenRecordIds = new Set();
-  state.stats = { total: 0, pass: 0, fail: 0, unknown: 0 };
   const chronological = records.slice().reverse();
   for(const r of chronological){
     addHistory([recordToItem(r)]);
   }
+  renderHistory();
 }
 async function refreshFromRecords(initial = false){
   try{
-    const d = await (await fetch("/api/records?limit=80")).json();
+    if(!state.batchId){
+      renderStats(emptyOrderStats());
+      if(initial){
+        state.history = [];
+        state.seenRecordIds = new Set();
+        renderHistory();
+      }
+      return;
+    }
+    const d = await (await fetch("/api/records/by_order/" + encodeURIComponent(state.batchId) + "?limit=5000", {cache:"no-store"})).json();
+    if(!d.ok) throw new Error(d.error || "当前订单记录读取失败");
     const records = d.records || [];
-    if(!records.length) return;
+    renderStats(buildOrderStats(d.order || {}, records));
+    if(state.captureInProgress) return;
+    if(state.currentInspectionId){
+      const currentRecords = records
+        .filter(r => r.inspection_id === state.currentInspectionId)
+        .slice().sort((a,b) => (a.slot_pos || 999) - (b.slot_pos || 999));
+      if(currentRecords.length){
+        const currentItems = currentRecords.map(recordToItem);
+        renderCurrent(currentItems, displayVerdict(currentItems, aggregateVerdict(currentItems)),
+          recordTime(currentRecords[0].created_at), currentRecords[0].timing || {}, currentRecords[0].token_usage || {});
+        renderAnnotatedFromRecords(currentRecords);
+      }
+      return;
+    }
+    if(state.blockHistoricalReplay) return;
+    if(!records.length){
+      if(initial) rebuildHistoryFromRecords([]);
+      return;
+    }
     if(initial){
       rebuildHistoryFromRecords(records);
     }else{

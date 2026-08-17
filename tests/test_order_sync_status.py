@@ -8,7 +8,6 @@ def _reset_state():
         running=False,
         last_started=0.0,
         last_success=0.0,
-        last_full_success=0.0,
         last_mode="",
         last_imported=0,
         last_error="",
@@ -39,12 +38,18 @@ def test_sync_failure_is_persisted_and_reported(monkeypatch, tmp_path):
 
 
 def test_success_clears_previous_sync_error(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_fetch_orders(**kwargs):
+        calls.append(kwargs)
+        return {
+            "ok": True,
+            "orders": [],
+            "total": 0,
+        }
+
     monkeypatch.setattr(batches, "_SYNC_STATE_FILE", tmp_path / "kingdee_sync_state.json")
-    monkeypatch.setattr(batches.kingdee, "fetch_orders", lambda **_kwargs: {
-        "ok": True,
-        "orders": [],
-        "total": 0,
-    })
+    monkeypatch.setattr(batches.kingdee, "fetch_orders", fake_fetch_orders)
     monkeypatch.setattr(batches, "_import_orders", lambda *_args, **_kwargs: {
         "ok": True,
         "imported": 0,
@@ -56,7 +61,9 @@ def test_success_clears_previous_sync_error(monkeypatch, tmp_path):
     status = batches.sync_status()
 
     assert result["ok"] is True
-    assert status["last_mode"] == "full"
+    assert status["last_mode"] == "incremental"
+    assert result["mode"] == "incremental"
+    assert calls == [{"page_size": 100, "max_pages": batches._INCREMENTAL_PAGES, "recent": True}]
     assert status["last_error"] == ""
     assert status["last_error_at"] == 0
     assert status["consecutive_failures"] == 0

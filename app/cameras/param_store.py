@@ -30,8 +30,10 @@ def _env_float(key: str):
 def _seed() -> dict:
     """无备份文件时用 .env 的角色曝光/增益播种。"""
     return {
-        "front": {"exp_us": _env_float("HIK_FRONT_EXPOSURE_US"), "gain_db": _env_float("HIK_FRONT_GAIN")},
-        "back": {"exp_us": _env_float("HIK_BACK_EXPOSURE_US"), "gain_db": _env_float("HIK_BACK_GAIN")},
+        "front": {"exp_us": _env_float("HIK_FRONT_EXPOSURE_US"), "gain_db": _env_float("HIK_FRONT_GAIN"),
+                  "orient": os.environ.get("HIK_FRONT_ORIENT", "none").strip().lower()},
+        "back": {"exp_us": _env_float("HIK_BACK_EXPOSURE_US"), "gain_db": _env_float("HIK_BACK_GAIN"),
+                 "orient": os.environ.get("HIK_BACK_ORIENT", "rot180").strip().lower()},
     }
 
 
@@ -52,7 +54,8 @@ def load_role(role: str) -> dict:
         return _seed().get(role, {})
 
 
-def save_role(role: str, exp_us: float | None = None, gain_db: float | None = None) -> None:
+def save_role(role: str, exp_us: float | None = None, gain_db: float | None = None,
+              orient: str | None = None) -> None:
     """更新某角色备份好值（只更非 None 的项）。原子写，避免半截文件。"""
     if not role:
         return
@@ -63,6 +66,8 @@ def save_role(role: str, exp_us: float | None = None, gain_db: float | None = No
             cur["exp_us"] = round(float(exp_us), 1)
         if gain_db is not None:
             cur["gain_db"] = round(float(gain_db), 2)
+        if orient is not None:
+            cur["orient"] = str(orient)
         data[role] = cur
         os.makedirs(os.path.dirname(_PATH), exist_ok=True)
         tmp = _PATH + ".tmp"

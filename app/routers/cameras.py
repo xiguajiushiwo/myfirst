@@ -19,6 +19,12 @@ router = APIRouter()
 _MANUAL_INSPECTION_LOCK = threading.Lock()
 
 _MJPEG = "multipart/x-mixed-replace; boundary=frame"
+_PREVIEW_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+    "X-Accel-Buffering": "no",
+}
 
 
 def _next_seq_dir() -> tuple[str, str]:
@@ -53,7 +59,7 @@ def camera_status():
 @router.get("/api/camera/preview/{side}")
 def camera_preview(side: str):
     """某一路相机的 MJPEG 实时预览流（任意浏览器 <img> 直接看）。"""
-    return StreamingResponse(camera.mjpeg(side), media_type=_MJPEG)
+    return StreamingResponse(camera.mjpeg(side), media_type=_MJPEG, headers=_PREVIEW_HEADERS)
 
 
 @router.post("/api/camera/capture")
@@ -129,12 +135,22 @@ def hik_release():
     return {"ok": True}
 
 
+@router.post("/api/hik/resume")
+def hik_resume():
+    """恢复相机后台取流；页面建立双路预览前只需调用一次。"""
+    hik.resume()
+    return {"ok": True}
+
+
 @router.get("/api/hik/preview")
 def hik_preview(side: str = "front"):
     """海康相机实时预览 MJPEG 流。`side=front`(上/正面) / `back`(下/反面)。"""
     role = side if side in ("front", "back") else "front"
-    hik.resume()                                   # 要用相机→解除释放暂停(允许自愈)
-    return StreamingResponse(hik.mjpeg(role=role), media_type=_MJPEG)
+    return StreamingResponse(
+        hik.mjpeg(role=role, quality=80),
+        media_type=_MJPEG,
+        headers=_PREVIEW_HEADERS,
+    )
 
 
 @router.get("/api/hik/exposure")

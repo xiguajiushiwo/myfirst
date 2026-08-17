@@ -227,7 +227,7 @@ def _predict_array(engine, arr):
     return out
 
 
-def recognize(image_path: str) -> list[dict]:
+def recognize(image_path: str, tile_bands: int | None = None) -> list[dict]:
     """对单张图片做 OCR，返回 [{text, score, box}]。
 
     流程：整图识别 + 横向分块识别 → 合并 → NMS 去重。
@@ -243,7 +243,7 @@ def recognize(image_path: str) -> list[dict]:
 
     detections: list[dict] = _predict_array(engine, full)
 
-    bands = int(_config.get("tile_bands", 1))
+    bands = int(_config.get("tile_bands", 1) if tile_bands is None else tile_bands)
     overlap = float(_config.get("tile_overlap", 0.18))
     if bands >= 2:
         bh = int(H / (bands - (bands - 1) * overlap))

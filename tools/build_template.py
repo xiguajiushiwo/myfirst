@@ -23,33 +23,39 @@ from app.recognition.region_ocr import recognize_rules, _box_kind
 from app.recognition import template_store
 
 
-def _cluster_slots(items, n):
+def _cluster_slots(items, n, axis="horizontal"):
     """items=[(cx_norm, box_norm)]（cx 已归一化）→ 按最大 (n-1) 间隙聚成 n 组。
 
     返回 (slot_of(cx)->idx 函数, slots 矩形列表[x0,y0,x1,y1]归一化)。
     """
-    xs = sorted(c for c, _ in items)
-    if len(xs) < n:
-        n = max(1, len(xs))
-    gaps = sorted(((b - a, (a + b) / 2) for a, b in zip(xs, xs[1:])), reverse=True)[:n - 1]
+    values = sorted(c for c, _ in items)
+    if len(values) < n:
+        n = max(1, len(values))
+    gaps = sorted(((b - a, (a + b) / 2) for a, b in zip(values, values[1:])), reverse=True)[:n - 1]
     bounds = sorted(m for _, m in gaps)
 
-    def slot_of(cx):
-        return sum(1 for b in bounds if cx >= b)
+    def slot_of(value):
+        return sum(1 for b in bounds if value >= b)
 
     # 每组的 x 范围 → slot 矩形（纵向占满 0~1，x 各留少量余量）
     groups = {}
-    for cx, box in items:
-        groups.setdefault(slot_of(cx), []).append(box)
+    for value, box in items:
+        groups.setdefault(slot_of(value), []).append(box)
     slots = []
     for i in sorted(groups):
-        allx = [p[0] for box in groups[i] for p in box]
-        slots.append([max(0.0, min(allx) - 0.01), 0.0, min(1.0, max(allx) + 0.01), 1.0])
-    slots.sort(key=lambda r: r[0])
+        points = [p for box in groups[i] for p in box]
+        if axis == "vertical":
+            ys = [p[1] for p in points]
+            slots.append([0.0, max(0.0, min(ys) - 0.025), 1.0, min(1.0, max(ys) + 0.025)])
+        else:
+            xs = [p[0] for p in points]
+            slots.append([max(0.0, min(xs) - 0.01), 0.0, min(1.0, max(xs) + 0.01), 1.0])
+    slots.sort(key=lambda r: r[1] if axis == "vertical" else r[0])
     return slot_of, slots
 
 
-def build(image_path, side, tid, brand, model, sticks, merge, current_year=None):
+def build(image_path, side, tid, brand, model, sticks, merge, current_year=None,
+          axis="horizontal"):
     img = Image.open(image_path).convert("RGB")
     W, H = img.size
     codes = recognize_rules(image_path, current_year=current_year)
@@ -87,18 +93,19 @@ def build(image_path, side, tid, brand, model, sticks, merge, current_year=None)
     dram = [c for c in keep if c.code_type == "dram"]
     items = []
     for c in dram:
-        xs = [p[0] for p in c.box]
-        items.append(((min(xs) + max(xs)) / 2 / W, norm(c.box)))
-    slot_of, slots = _cluster_slots(items, sticks) if items else (lambda x: 0, [])
+        coords = [p[1] for p in c.box] if axis == "vertical" else [p[0] for p in c.box]
+        scale = H if axis == "vertical" else W
+        items.append(((min(coords) + max(coords)) / 2 / scale, norm(c.box)))
+    slot_of, slots = _cluster_slots(items, sticks, axis=axis) if items else (lambda x: 0, [])
 
     boxes = []
     for i, c in enumerate(keep, 1):
         nb = norm(c.box)
-        cx = sum(p[0] for p in nb) / len(nb)
+        center = sum(p[1] if axis == "vertical" else p[0] for p in nb) / len(nb)
         boxes.append({"type": c.code_type, "box": nb, "manual": False,
-                      "id": i, "slot": slot_of(cx) if slots else -1})
+                      "id": i, "slot": slot_of(center) if slots else -1})
 
-    layout = {"image_size": [W, H], "boxes": boxes, "slots": slots}
+    layout = {"image_size": [W, H], "slot_axis": axis, "boxes": boxes, "slots": slots}
 
     # 合并：若已存在该模板，保留另一面
     sides = {}
@@ -128,8 +135,9 @@ def main():
     ap.add_argument("--sticks", type=int, default=4)
     ap.add_argument("--merge", action="store_true", help="合并进已存在的同 id 模板(保留另一面)")
     ap.add_argument("--year", type=int, default=None)
+    ap.add_argument("--axis", choices=["horizontal", "vertical"], default="horizontal")
     a = ap.parse_args()
-    build(a.image, a.side, a.id, a.brand, a.model, a.sticks, a.merge, a.year)
+    build(a.image, a.side, a.id, a.brand, a.model, a.sticks, a.merge, a.year, a.axis)
 
 
 if __name__ == "__main__":

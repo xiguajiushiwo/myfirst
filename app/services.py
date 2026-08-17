@@ -287,16 +287,25 @@ def compute_signal(codes, threshold: float = SPREAD_THRESHOLD_WEEKS):
 def _structure_dates(all_codes, signal):
     """把识别结果整理成入库用的结构化日期字段（YYYYWW）+ 日期不合格说明。"""
     controller_date = pcb_date = ""
+    controller_status = pcb_status = ""
     storage_chips = []
     for c in all_codes:
-        if c.code_type == "controller" and c.week and not controller_date:
-            controller_date = to_yyyyww(c.year, c.week)
-        elif c.code_type == "pcb" and c.week and not pcb_date:
-            pcb_date = to_yyyyww(c.year, c.week)
+        if c.code_type == "controller":
+            if c.week and not controller_date:
+                controller_date = to_yyyyww(c.year, c.week)
+            elif not c.week and c.status and c.status != "ok" and not controller_status:
+                controller_status = c.status
+        elif c.code_type == "pcb":
+            if c.week and not pcb_date:
+                pcb_date = to_yyyyww(c.year, c.week)
+            elif not c.week and c.status and c.status != "ok" and not pcb_status:
+                pcb_status = c.status
         elif c.code_type == "dram":
+            slot = getattr(c, "slot", -1)
             storage_chips.append({
                 "idx": getattr(c, "idx", None),
                 "side": getattr(c, "_side", ""),
+                "slot": slot + 1 if slot >= 0 else None,
                 "yyyyww": to_yyyyww(c.year, c.week),
                 "status": c.status,
             })
@@ -321,6 +330,7 @@ def _structure_dates(all_codes, signal):
         except (ValueError, TypeError):
             date_fail.append(signal.get("message", "日期不合格"))
     return {"controller_date": controller_date, "pcb_date": pcb_date,
+            "controller_status": controller_status, "pcb_status": pcb_status,
             "storage_chips": storage_chips, "date_ok": date_ok, "date_fail": date_fail}
 
 
@@ -481,6 +491,18 @@ def build_record(rec: dict, insp: dict, label: dict, operator: str,
     sn_missing = not (lb.get("sn") or "").strip()
     if sn_missing:
         fails.append("SN 二维码未解出，待人工补录")
+    label_data = {
+        key: lb.get(key) for key in
+        ("sn", "model", "brand", "spec", "mfg", "capacity", "frequency",
+         "raw", "src", "sn_unread") if lb.get(key) not in (None, "")
+    }
+    date_status = {}
+    if dates.get("controller_status"):
+        date_status["controller"] = dates.get("controller_status")
+    if dates.get("pcb_status"):
+        date_status["pcb"] = dates.get("pcb_status")
+    if date_status:
+        label_data["date_status"] = date_status
     return {
         "batch_id": int(b.get("id") or 0) or None,
         "operator": operator or "",
@@ -500,11 +522,7 @@ def build_record(rec: dict, insp: dict, label: dict, operator: str,
         "fail_desc": "；".join(fails),
         "review_status": "未复查",
         "sn_unread": sn_missing,                     # SN 未精确读出(二维码没解开)→ 前端标红待人工
-        "label_data": {
-            key: lb.get(key) for key in
-            ("sn", "model", "brand", "spec", "mfg", "capacity", "frequency",
-             "raw", "src", "sn_unread") if lb.get(key) not in (None, "")
-        },
+        "label_data": label_data,
     }
 
 
@@ -536,12 +554,16 @@ def _stick_summary(record: dict, rid) -> dict:
     return {
         "slot_pos": record.get("slot_pos"), "record_id": rid,
         "verdict": record["verdict"], "sn": record["sn"], "brand": record["brand"],
-        "model": record.get("model", ""), "frequency": record.get("frequency", ""),
+        "model": record.get("model", ""), "capacity": record.get("capacity", ""),
+        "frequency": record.get("frequency", ""),
         "spec": record.get("spec", ""), "mfg": record.get("mfg", ""),
         "label_data": record.get("label_data") or {},
         "sn_unread": record.get("sn_unread", False),
         "controller_date": record["controller_date"], "pcb_date": record["pcb_date"],
-        "storage_count": len(record["storage_chips"]), "fail_desc": record["fail_desc"],
+        "controller_status": ((record.get("label_data") or {}).get("date_status") or {}).get("controller", ""),
+        "pcb_status": ((record.get("label_data") or {}).get("date_status") or {}).get("pcb", ""),
+        "storage_chips": record.get("storage_chips") or [],
+        "storage_count": len(record.get("storage_chips") or []), "fail_desc": record["fail_desc"],
         # 外观质检逐项（前端要分项显示：日期一致/元器件/金手指/芯片打磨）
         # 外观项当前停用，统一为 None。
         "date_ok": record.get("date_ok"), "comp_ok": record.get("comp_ok"),
@@ -650,10 +672,17 @@ def _batch_product_family(batch: dict | None) -> str:
 def _batch_product_spec(batch: dict | None) -> tuple[str, set[str]]:
     if not batch:
         return "", set()
+    spec_text = " ".join(str(batch.get(key) or "") for key in (
+        "capacity", "frequency", "kd_specification", "model", "remark",
+    ))
     capacity = str(batch.get("capacity") or "").upper().replace(" ", "")
+    if not capacity:
+        cap_match = re.search(r"(?<!\d)(\d+)\s*(?:G|GB)(?![A-Z0-9])", spec_text, re.I)
+        if cap_match:
+            capacity = f"{cap_match.group(1)}GB"
     if capacity.endswith("G") and not capacity.endswith("GB"):
         capacity += "B"
-    frequencies = set(re.findall(r"(?<!\d)([1-9]\d{3})(?!\d)", str(batch.get("frequency") or "")))
+    frequencies = set(re.findall(r"(?<!\d)([1-9]\d{3})(?!\d)", spec_text))
     return capacity, frequencies
 
 
@@ -677,8 +706,9 @@ def _resolve_product_template(batch: dict | None, requested_id: str | None) -> s
 
     family_templates = {
         "samsung": "samsung-4up-0808",
-        "hynix": "hynix-64gb-5600-pending",
     }
+    if family == "hynix":
+        raise ValueError("海力士识别模板已删除，当前唯一可用模板为三星模板，不能跨品牌套用")
     expected_id = family_templates.get(family)
     if expected_id:
         expected = template_store.get_template(expected_id)
@@ -704,7 +734,9 @@ def _pre_crops(paths: dict, uid: str, mode: str, template_id):
     t0 = time.perf_counter()
     try:
         from PIL import Image
-        from .recognition.region_ocr import detect_occupied_slots, _slot_rects_for_layout
+        from .recognition.region_ocr import (detect_occupied_slots, _slot_axis,
+                                             _physical_slot_for_visual,
+                                             _slot_rects_for_layout)
 
         tid, tpl = _slot_template(template_id)
         if not tpl:
@@ -718,13 +750,21 @@ def _pre_crops(paths: dict, uid: str, mode: str, template_id):
             rects = _slot_rects_for_layout(layout)
             if not rects:
                 continue
-            occ = detect_occupied_slots(Image.open(p).convert("RGB"), rects)
-            occupancy[side] = occ
+            occ = detect_occupied_slots(
+                Image.open(p).convert("RGB"), rects, axis=_slot_axis(layout))
+            mapped_occ = []
             for o in occ:
-                configured_slots.add(o["slot"])
-                boxes[(side, o["slot"])] = o["box"]
+                visual_slot = int(o["slot"])
+                physical_slot = _physical_slot_for_visual(layout, visual_slot, len(rects))
+                configured_slots.add(physical_slot)
+                boxes[(side, physical_slot)] = o["box"]
+                mapped = dict(o)
+                mapped["visual_slot"] = visual_slot
+                mapped["slot"] = physical_slot
+                mapped_occ.append(mapped)
                 if o["occupied"]:
-                    occ_slots.add(o["slot"])
+                    occ_slots.add(physical_slot)
+            occupancy[side] = mapped_occ
         if not configured_slots:
             return None
         crops = {
@@ -813,8 +853,9 @@ def _assign_rule_codes_to_slots(core: dict, slot_info: dict) -> None:
         if inside:
             code.slot = inside[0]
         else:
-            code.slot = min(candidates,
-                            key=lambda row: abs(cx - (row[1][0] + row[1][2]) / 2))[0]
+            code.slot = min(candidates, key=lambda row: (
+                (cx - (row[1][0] + row[1][2]) / 2) ** 2 +
+                (cy - (row[1][1] + row[1][3]) / 2) ** 2))[0]
     core["occ_by_side"] = slot_info.get("occupancy") or {}
     core["stick_total"] = len(occupied)
 
@@ -873,7 +914,7 @@ def analyze_and_save(job, operator="", mode="geo", template_id=None,
     with ThreadPoolExecutor(max_workers=2) as ex:
         future_labels = ex.submit(_local_label_branch, pre["crops"], _stage) if pre else None
         rec_started = time.perf_counter()
-        core = _recognize_core(paths, uid, mode, None, current_year, threshold)
+        core = _recognize_core(paths, uid, mode, template_id, current_year, threshold)
         rec_sec = round(time.perf_counter() - rec_started, 3)
         if pre:
             _assign_rule_codes_to_slots(core, pre)
@@ -927,7 +968,7 @@ def analyze_and_save(job, operator="", mode="geo", template_id=None,
             rec_like = {"dates": _structure_dates(sc, sig), "sides": core["sides"]}
             record = build_record(rec_like, {}, lbls.get(si) or {}, operator, batch=batch)
             record.update(imgs)                            # 追溯：共用整盘原图/标注图
-            record["slot_pos"] = si + 1                    # 托盘第几槽(1..N，左→右)
+            record["slot_pos"] = si + 1                    # 托盘第几槽(1..N，按模板槽位顺序)
             record.update({"inspection_id": uid, "recognition_mode": mode,
                            "timing": timing, "token_usage": token_usage})
             records.append(record)

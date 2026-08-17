@@ -60,7 +60,6 @@
 
 <div style="max-width:none;padding:22px 26px 0">
   <h1 style="font-size:30px;font-weight:900;letter-spacing:-.5px;margin:0 0 6px">质检管理看板</h1>
-  <p style="color:var(--dim);font-size:14px;margin:0">以采购订单为单元查看质检进度、问题内存条、拍摄图片和人工复查，并可按 SN 追溯。</p>
 </div>
 
 <!-- KPI -->
@@ -173,13 +172,23 @@ let currentUser='';
 
 let allRecords=[], allBatches=[];
 
+function orderInspectionState(batch){
+  const inspected=Number(batch.total||0);
+  const expected=Number(batch.qty_expected||0);
+  const completed=inspected>0&&(!batch.active||(expected>0&&inspected>=expected));
+  return {started:inspected>0,completed};
+}
+
 async function loadKpis(){
   try{
     const d=await(await fetch('/api/stats/overview')).json();
     const one=(lab,o)=>`<div class="kpi"><div class="lab">${lab}</div><div class="val">${pct(o.yield)}</div>
       <div class="sub">良品 ${o.passed} / 已检 ${o.total}</div>
       <div class="bar"><i style="width:${o.yield==null?0:o.yield*100}%"></i></div></div>`;
-    const activeBatches=allBatches.filter(b=>b.active).length;
+    const activeBatches=allBatches.filter(b=>{
+      const state=orderInspectionState(b);
+      return state.started&&!state.completed;
+    }).length;
     $('kpis').innerHTML=one('今日良品率',d.today)+one('累计良品率',d.all)+
       `<div class="kpi"><div class="lab">在检订单</div><div class="val">${activeBatches}</div><div class="sub">共 ${allBatches.length} 张采购订单</div></div>`+
       `<div class="kpi"><div class="lab">今日已检</div><div class="val">${d.today.total}</div><div class="sub">累计 ${d.all.total} 根</div></div>`;
@@ -205,11 +214,13 @@ function renderBatches(){
   const box=$('batch-body');
   if(!allBatches.length){box.innerHTML='<div class="empty">暂无采购订单</div>';$('batch-count').textContent=0;return;}
   const supplier=$('f-supplier').value;
-  const visibleBatches=supplier?allBatches.filter(b=>b.supplier===supplier):allBatches;
+  const startedBatches=allBatches.filter(b=>orderInspectionState(b).started);
+  const visibleBatches=supplier?startedBatches.filter(b=>b.supplier===supplier):startedBatches;
   $('batch-count').textContent=visibleBatches.length;
-  if(!visibleBatches.length){box.innerHTML='<div class="empty">该供应商暂无采购订单</div>';return;}
+  if(!visibleBatches.length){box.innerHTML='<div class="empty">暂无正在检或已完成的订单</div>';return;}
   const selected=$('f-batch').value;
   box.innerHTML=visibleBatches.map(b=>{
+    const orderState=orderInspectionState(b);
     const records=allRecords.filter(r=>String(r.batch_id||'')===String(b.id)||(r.batch_id==null&&r.batch_no&&r.batch_no===b.batch_no));
     const passed=records.filter(r=>r.verdict==='pass').length;
     const failed=records.filter(r=>r.verdict==='fail').length;
@@ -226,7 +237,7 @@ function renderBatches(){
           <span class="tag cat">${esc(b.frequency)||''}</span>
           ${b.kd_specification?`<span class="tag cat">规格 ${esc(b.kd_specification)}</span>`:''}
           ${b.cond?`<span class="tag new">${esc(b.cond)}</span>`:''}
-          ${b.active?'<span class="tag old">在检</span>':'<span class="tag unknown">已结</span>'}</div>
+          ${orderState.completed?'<span class="tag unknown">已完成</span>':'<span class="tag old">正在检</span>'}</div>
         <div class="meta"><span>客户 ${esc(b.customer)||'—'}</span>${b.supplier?`<span>供应商 ${esc(b.supplier)}</span>`:''}<span>登记 ${esc(b.created_at||'')}</span>${b.remark?`<span>来源 ${esc(b.remark)}</span>`:''}</div>
       </div>
         <div class="order-stats"><span>已检 <b>${records.length}</b></span><span class="pass">合格 ${passed}</span><span class="fail">不合格 ${failed}</span><span class="pending">待定 ${unknown}</span><span>待复查 ${pendingReview}</span></div>

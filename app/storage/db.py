@@ -536,9 +536,38 @@ def _tri(v):
     return None if v is None else (1 if v else 0)
 
 
+def _auto_close_batch_if_complete(cur, batch_id) -> bool:
+    """订单已检数量达到应检数量后自动结单。
+
+    这里按 inspection_records 的实际入库条数算，不依赖前端展示值。兼容早期只写
+    batch_no、未写 batch_id 的记录，避免老数据导致完成判断少算。
+    """
+    bid = int(batch_id or 0)
+    if not bid:
+        return False
+    cur.execute(
+        """
+        UPDATE batches b
+           SET active=0
+         WHERE b.id=%s
+           AND b.active=1
+           AND b.qty_expected>0
+           AND (
+                SELECT COUNT(*)
+                  FROM inspection_records r
+                 WHERE r.batch_id=b.id
+                    OR (r.batch_id IS NULL AND r.batch_no=b.batch_no AND b.batch_no<>'')
+           ) >= b.qty_expected
+        """,
+        (bid,),
+    )
+    return cur.rowcount > 0
+
+
 def save_record(rec: dict) -> int:
     """保存一条质检记录，返回自增 id。"""
     chips = rec.get("storage_chips") or []
+    batch_id = int(rec.get("batch_id") or 0) or None
     conn = _connect()
     try:
         with conn.cursor() as cur:
@@ -590,8 +619,11 @@ def save_record(rec: dict) -> int:
                 json.dumps(rec.get("label_data") or {}, ensure_ascii=False),
             ))
             rid = cur.lastrowid
+            auto_closed = _auto_close_batch_if_complete(cur, batch_id)
         metrics.record_verdict(rec.get("verdict") or "")
         log.info("保存质检记录 #%s verdict=%s sn=%s", rid, rec.get("verdict"), rec.get("sn"))
+        if auto_closed:
+            log.info("订单 #%s 已检数量达到应检数量，自动结单", batch_id)
         return rid
     finally:
         conn.close()

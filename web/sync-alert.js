@@ -8,8 +8,8 @@
     return new Date(timestamp * 1000).toLocaleString("zh-CN", { hour12: false });
   }
 
-  function modeName(mode) {
-    return mode === "full" ? "全量同步" : "增量同步";
+  function modeName() {
+    return "增量同步";
   }
 
   function ensureAlert() {
@@ -60,7 +60,7 @@
     alert.querySelector(".ksa-message").textContent = status.last_error;
     alert.querySelector(".ksa-meta").textContent =
       `失败时间：${formatTime(status.last_error_at)}　上次成功：${formatTime(status.last_success)}`;
-    alert.dataset.syncMode = status.last_mode === "full" ? "full" : "incremental";
+    alert.dataset.syncMode = "incremental";
     alert.classList.add("on");
   }
 
@@ -83,7 +83,6 @@
     try {
       const form = new FormData();
       form.append("force", "true");
-      form.append("full", String(button.closest("aside").dataset.syncMode === "full"));
       await fetch("/api/orders/sync_kingdee", { method: "POST", body: form });
     } finally {
       button.disabled = false;
